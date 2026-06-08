@@ -163,7 +163,7 @@ export class OrderSelectScene extends Phaser.Scene {
   private createOrdersArea(): void {
     const { width } = this.scale;
 
-    this.add.rectangle(380, 400, 720, 540, 0xFFFFFF, 0.95).setStrokeStyle(3, 0x90CAF9);
+    this.add.rectangle(355, 400, 670, 540, 0xFFFFFF, 0.95).setStrokeStyle(3, 0x90CAF9);
     this.add.text(40, 160, '📝 可用订单', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '20px',
@@ -173,12 +173,12 @@ export class OrderSelectScene extends Phaser.Scene {
 
     this.maskRect = this.make.graphics({});
     this.maskRect.fillStyle(0xFFFFFF, 1);
-    this.maskRect.fillRect(40, 185, 680, 520);
+    this.maskRect.fillRect(40, 185, 630, 520);
 
     this.ordersContainer = this.add.container(40, 185);
     this.ordersContainer.setMask(this.maskRect.createGeometryMask());
 
-    this.add.text(690, 175, '↓ 滚动查看更多', {
+    this.add.text(640, 175, '↓ 滚动查看更多', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '11px',
       color: '#90CAF9'
@@ -187,7 +187,7 @@ export class OrderSelectScene extends Phaser.Scene {
 
   private createRecentOrders(): void {
     const { width } = this.scale;
-    const x = 820;
+    const x = 870;
 
     this.add.rectangle(x, 400, 250, 540, 0xFFFFFF, 0.95).setStrokeStyle(3, 0xCE93D8);
     this.add.text(x, 170, '📜 最近订单', {
@@ -248,7 +248,7 @@ export class OrderSelectScene extends Phaser.Scene {
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: any[], _deltaX: number, deltaY: number) => {
       const pointerX = this.input.activePointer.x;
       const pointerY = this.input.activePointer.y;
-      if (pointerX >= 40 && pointerX <= 720 && pointerY >= 185) {
+      if (pointerX >= 40 && pointerX <= 670 && pointerY >= 185) {
         this.scrollY += deltaY;
         this.scrollY = Phaser.Math.Clamp(this.scrollY, this.maxScrollY, 0);
         this.updateOrdersList();
@@ -267,7 +267,7 @@ export class OrderSelectScene extends Phaser.Scene {
       filtered = filtered.filter(o => this.activeFilter.scene!.includes(o.scene));
     }
 
-    const cardW = 660;
+    const cardW = 610;
     const cardH = 130;
     const gapY = 15;
     const totalHeight = filtered.length * (cardH + gapY);
@@ -275,7 +275,7 @@ export class OrderSelectScene extends Phaser.Scene {
     this.scrollY = Phaser.Math.Clamp(this.scrollY, this.maxScrollY, 0);
 
     if (filtered.length === 0) {
-      this.add.text(340, 250, '暂无符合条件的订单\n试试清除筛选条件', {
+      this.add.text(305, 250, '暂无符合条件的订单\n试试清除筛选条件', {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '18px',
         color: '#90A4AE',
@@ -307,16 +307,16 @@ export class OrderSelectScene extends Phaser.Scene {
 
       this.ordersContainer.add(this.add.text(120, y - 45, order.customerName + ' · ' + order.title, {
         fontFamily: 'Microsoft YaHei, sans-serif',
-        fontSize: '18px',
+        fontSize: '16px',
         color: '#0D47A1',
         fontStyle: 'bold'
       }).setOrigin(0, 0.5));
 
       this.ordersContainer.add(this.add.text(15, y - 10, order.description, {
         fontFamily: 'Microsoft YaHei, sans-serif',
-        fontSize: '13px',
+        fontSize: '12px',
         color: '#546E7A',
-        wordWrap: { width: 420 }
+        wordWrap: { width: 380 }
       }).setOrigin(0, 0.5));
 
       const tags = [
@@ -326,56 +326,56 @@ export class OrderSelectScene extends Phaser.Scene {
         '预算¥' + order.budget
       ];
       tags.forEach((tag, i) => {
-        const tx = 15 + i * 90;
-        const tagBg = this.add.rectangle(tx + 35, y + 30, 80, 22, 0xE3F2FD, 0.8).setStrokeStyle(1, 0x90CAF9);
+        const tx = 15 + i * 78;
+        const tagBg = this.add.rectangle(tx + 32, y + 30, 72, 22, 0xE3F2FD, 0.8).setStrokeStyle(1, 0x90CAF9);
         this.ordersContainer.add(tagBg);
-        this.ordersContainer.add(this.add.text(tx + 35, y + 30, tag, {
+        this.ordersContainer.add(this.add.text(tx + 32, y + 30, tag, {
           fontFamily: 'Microsoft YaHei, sans-serif',
-          fontSize: '11px',
+          fontSize: '10px',
           color: '#1565C0'
         }).setOrigin(0.5));
       });
 
-      this.ordersContainer.add(this.add.text(480, y - 10, '🌼 需要花语: ' + order.requiredMeanings.join('、'), {
+      this.ordersContainer.add(this.add.text(400, y - 12, '🌼 花语: ' + order.requiredMeanings.join('、'), {
         fontFamily: 'Microsoft YaHei, sans-serif',
-        fontSize: '12px',
+        fontSize: '11px',
         color: '#7B1FA2'
       }).setOrigin(0, 0.5));
 
-      this.ordersContainer.add(this.add.text(480, y + 15, '🎯 目标: ' + order.targetScore + '分  |  ⏱ ' + order.timeLimit + 's  |  💰+' + order.coinReward, {
+      this.ordersContainer.add(this.add.text(400, y + 10, '🎯 ' + order.targetScore + '分 | ⏱' + order.timeLimit + 's | 💰+' + order.coinReward, {
         fontFamily: 'Microsoft YaHei, sans-serif',
-        fontSize: '12px',
+        fontSize: '11px',
         color: '#F57C00'
       }).setOrigin(0, 0.5));
 
       if (order.forbiddenFlowerIds.length > 0) {
-        this.ordersContainer.add(this.add.text(480, y + 40, '🚫 禁用花材: ' + order.forbiddenFlowerIds.length + '种', {
+        this.ordersContainer.add(this.add.text(400, y + 32, '🚫 禁用: ' + order.forbiddenFlowerIds.length + '种', {
           fontFamily: 'Microsoft YaHei, sans-serif',
-          fontSize: '11px',
+          fontSize: '10px',
           color: '#D32F2F'
         }).setOrigin(0, 0.5));
       }
 
       if (order.bonusTargets.length > 0) {
-        this.ordersContainer.add(this.add.text(600, y + 40, '🏆 加分项: ' + order.bonusTargets.length + '个', {
+        this.ordersContainer.add(this.add.text(500, y + 32, '🏆 +' + order.bonusTargets.length, {
           fontFamily: 'Microsoft YaHei, sans-serif',
-          fontSize: '11px',
+          fontSize: '10px',
           color: '#388E3C',
           fontStyle: 'bold'
         }).setOrigin(0, 0.5));
       }
 
-      const acceptBtn = this.add.rectangle(620, y - 20, 80, 50, 0x4CAF50, 0.95).setStrokeStyle(2, 0xFFFFFF, 0.8);
+      const acceptBtn = this.add.rectangle(560, y - 15, 65, 45, 0x4CAF50, 0.95).setStrokeStyle(2, 0xFFFFFF, 0.8);
       this.ordersContainer.add(acceptBtn);
-      this.ordersContainer.add(this.add.text(620, y - 25, '接单', {
+      this.ordersContainer.add(this.add.text(560, y - 22, '接单', {
         fontFamily: 'Microsoft YaHei, sans-serif',
-        fontSize: '18px',
+        fontSize: '16px',
         color: '#FFFFFF',
         fontStyle: 'bold'
       }).setOrigin(0.5));
-      this.ordersContainer.add(this.add.text(620, y - 7, '详情', {
+      this.ordersContainer.add(this.add.text(560, y - 5, '详情', {
         fontFamily: 'Microsoft YaHei, sans-serif',
-        fontSize: '11px',
+        fontSize: '10px',
         color: '#C8E6C9'
       }).setOrigin(0.5));
 

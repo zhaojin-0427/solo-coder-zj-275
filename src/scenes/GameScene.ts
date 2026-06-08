@@ -176,7 +176,7 @@ export class GameScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(1, 0);
 
-    this.add.rectangle(380, 395, 380, 545, 0xFFFFFF, 0.95).setStrokeStyle(3, 0xFFCC80).setOrigin(0.5);
+    this.add.rectangle(380, 370, 380, 490, 0xFFFFFF, 0.95).setStrokeStyle(3, 0xFFCC80).setOrigin(0.5);
     this.add.text(380, 130, '🌸 花束预览', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '22px',
@@ -184,27 +184,27 @@ export class GameScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    this.previewContainer = this.add.container(380, 380);
-    this.scoreText = this.add.text(380, 590, '协调性评分: --', {
+    this.previewContainer = this.add.container(380, 350);
+    this.scoreText = this.add.text(380, 545, '协调性评分: --', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '18px',
       color: '#6A1B9A',
       fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    this.liveEstimateText = this.add.text(380, 618, '', {
+    this.liveEstimateText = this.add.text(380, 572, '', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '12px',
       color: '#888888'
     }).setOrigin(0.5);
 
-    this.add.text(380, 645, this.getHarmonyHint(), {
+    this.add.text(380, 597, this.getHarmonyHint(), {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '12px',
       color: '#888888'
     }).setOrigin(0.5);
 
-    this.add.rectangle(830, 395, 480, 545, 0xFFFFFF, 0.95).setStrokeStyle(3, 0xFFCC80).setOrigin(0.5);
+    this.add.rectangle(830, 370, 480, 490, 0xFFFFFF, 0.95).setStrokeStyle(3, 0xFFCC80).setOrigin(0.5);
     this.add.text(830, 130, '💐 花材库', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '22px',
@@ -214,33 +214,33 @@ export class GameScene extends Phaser.Scene {
 
     this.maskRect = this.make.graphics({});
     this.maskRect.fillStyle(0xFFFFFF, 1);
-    this.maskRect.fillRect(590, 185, 480, 470);
+    this.maskRect.fillRect(590, 185, 480, 420);
 
     this.createTabs();
     this.flowerListContainer = this.add.container(610, 195);
     this.flowerListContainer.setMask(this.maskRect.createGeometryMask());
     this.updateFlowerList();
 
-    this.add.text(1040, 430, '↓滚动', {
+    this.add.text(1040, 405, '↓滚动', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '12px',
       color: '#999999'
     }).setOrigin(0.5).setRotation(Math.PI / 2);
 
-    const submitBtn = this.add.rectangle(280, 685, 180, 50, 0x4CAF50, 0.9).setStrokeStyle(2, 0xFFFFFF, 0.8);
-    this.add.text(280, 685, '✅ 提交花束', {
+    const submitBtn = this.add.rectangle(280, 655, 180, 45, 0x4CAF50, 0.9).setStrokeStyle(2, 0xFFFFFF, 0.8);
+    this.add.text(280, 655, '✅ 提交花束', {
       fontFamily: 'Microsoft YaHei, sans-serif',
-      fontSize: '20px',
+      fontSize: '19px',
       color: '#FFFFFF',
       fontStyle: 'bold'
     }).setOrigin(0.5);
     submitBtn.setInteractive({ useHandCursor: true });
     submitBtn.on('pointerdown', () => this.submitBouquet());
 
-    const clearBtn = this.add.rectangle(480, 685, 180, 50, 0xF44336, 0.9).setStrokeStyle(2, 0xFFFFFF, 0.8);
-    this.add.text(480, 685, '🗑 清空重来', {
+    const clearBtn = this.add.rectangle(480, 655, 180, 45, 0xF44336, 0.9).setStrokeStyle(2, 0xFFFFFF, 0.8);
+    this.add.text(480, 655, '🗑 清空重来', {
       fontFamily: 'Microsoft YaHei, sans-serif',
-      fontSize: '20px',
+      fontSize: '19px',
       color: '#FFFFFF',
       fontStyle: 'bold'
     }).setOrigin(0.5);
@@ -250,10 +250,10 @@ export class GameScene extends Phaser.Scene {
       this.updateAllDisplays();
     });
 
-    const backBtn = this.add.rectangle(100, 685, 140, 50, 0x9E9E9E, 0.9).setStrokeStyle(2, 0xFFFFFF, 0.8);
-    this.add.text(100, 685, '← 返回', {
+    const backBtn = this.add.rectangle(100, 655, 140, 45, 0x9E9E9E, 0.9).setStrokeStyle(2, 0xFFFFFF, 0.8);
+    this.add.text(100, 655, '← 返回', {
       fontFamily: 'Microsoft YaHei, sans-serif',
-      fontSize: '18px',
+      fontSize: '17px',
       color: '#FFFFFF',
       fontStyle: 'bold'
     }).setOrigin(0.5);
@@ -336,12 +336,12 @@ export class GameScene extends Phaser.Scene {
 
     const cols = 3;
     const cardW = 140;
-    const cardH = 165;
+    const cardH = 155;
     const gapX = 15;
-    const gapY = 12;
+    const gapY = 10;
     const totalRows = Math.ceil(filteredFlowers.length / cols);
     const totalHeight = totalRows * (cardH + gapY);
-    this.maxScrollY = Math.min(0, 460 - totalHeight);
+    this.maxScrollY = Math.min(0, 410 - totalHeight);
     this.flowerScrollY = Phaser.Math.Clamp(this.flowerScrollY, this.maxScrollY, 0);
 
     filteredFlowers.forEach((flower, index) => {
@@ -369,7 +369,7 @@ export class GameScene extends Phaser.Scene {
       const card = this.add.rectangle(x, y, cardW, cardH, bgColor, 1).setStrokeStyle(2, borderColor);
       this.flowerListContainer.add(card);
 
-      const colorCircle = this.add.circle(x, y - 40, 26, Number('0x' + flower.color.hex.slice(1))).setStrokeStyle(2, 0x9E9E9E);
+      const colorCircle = this.add.circle(x, y - 38, 24, Number('0x' + flower.color.hex.slice(1))).setStrokeStyle(2, 0x9E9E9E);
       this.flowerListContainer.add(colorCircle);
 
       const nameText = this.add.text(x, y - 2, flower.name, {
@@ -380,14 +380,14 @@ export class GameScene extends Phaser.Scene {
       }).setOrigin(0.5);
       this.flowerListContainer.add(nameText);
 
-      const metaText = this.add.text(x, y + 20, flower.price + '元 | ' + flower.meaning, {
+      const metaText = this.add.text(x, y + 18, flower.price + '元 | ' + flower.meaning, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '11px',
         color: matchesMeaning ? '#2E7D32' : (isInSeason ? '#388E3C' : '#9E9E9E')
       }).setOrigin(0.5);
       this.flowerListContainer.add(metaText);
 
-      let tagY = y + 42;
+      let tagY = y + 38;
       const tags: { text: string; color: string; bg: string }[] = [];
       if (isForbidden) {
         tags.push({ text: '🚫禁用', color: '#FFFFFF', bg: '#E53935' });
