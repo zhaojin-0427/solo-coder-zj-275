@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
-import { Order, OrderDifficulty, OrderFilter, Scene as GameSceneType, Season } from '../types';
+import { Order, OrderDifficulty, OrderFilter, Scene as GameSceneType, Season, CustomerProfile } from '../types';
 import { generateOrderPool } from '../utils/orderGenerator';
-import { loadProgress, getRecentOrders } from '../utils/storage';
-import { ORDER_DIFFICULTY_NAMES, DIFFICULTY_COLORS, PALETTE_NAMES } from '../data/orders';
+import { loadProgress, getRecentOrders, getAllCustomers, getCustomerHistory } from '../utils/storage';
+import { ORDER_DIFFICULTY_NAMES, DIFFICULTY_COLORS, PALETTE_NAMES, CUSTOMER_TAG_NAMES, PROFESSION_RANK_NAMES } from '../data/orders';
 import { SCENE_NAMES, SEASON_NAMES } from '../data/levels';
+import { getSatisfactionEmoji, getSatisfactionLabel, getRepurchaseLabel, getFlowerDiscount } from '../utils/customerGrowth';
 
 export class OrderSelectScene extends Phaser.Scene {
   private orders: Order[] = [];
@@ -13,6 +14,8 @@ export class OrderSelectScene extends Phaser.Scene {
   private maxScrollY = 0;
   private maskRect!: Phaser.GameObjects.Graphics;
   private recentOrdersContainer!: Phaser.GameObjects.Container;
+  private rightPanelMode: 'recent' | 'customers' = 'recent';
+  private selectedCustomerId: string | null = null;
 
   constructor() {
     super('OrderSelectScene');
@@ -20,12 +23,13 @@ export class OrderSelectScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#E3F2FD');
-    this.orders = generateOrderPool(8);
+    const progress = loadProgress();
+    this.orders = generateOrderPool(8, undefined, progress);
 
     this.createHeader();
     this.createFilterBar();
     this.createOrdersArea();
-    this.createRecentOrders();
+    this.createRightPanel();
     this.createBackButton();
     this.setupMouseWheelScroll();
     this.updateOrdersList();
@@ -49,21 +53,33 @@ export class OrderSelectScene extends Phaser.Scene {
     });
 
     const progress = loadProgress();
-    this.add.text(width - 30, 25, '💰 ' + progress.coins + '  ⭐ ' + progress.customerReputation, {
+    const rankName = PROFESSION_RANK_NAMES[progress.professionRank];
+    const discount = Math.round(getFlowerDiscount(progress.professionRank) * 100);
+
+    this.add.text(width - 30, 20, '💰 ' + progress.coins + '  ⭐ ' + progress.customerReputation + `  🎖️ ${rankName}`, {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '20px',
       color: '#FFF59D',
       fontStyle: 'bold'
     }).setOrigin(1, 0);
 
-    this.add.text(width - 30, 58, '已完成 ' + progress.completedOrders.length + ' 笔订单', {
+    this.add.text(width - 30, 50, '订单:' + progress.completedOrders.length + '  花材折扣:' + discount + '%', {
       fontFamily: 'Microsoft YaHei, sans-serif',
-      fontSize: '14px',
+      fontSize: '13px',
       color: '#E3F2FD'
     }).setOrigin(1, 0);
 
-    const refreshBtn = this.add.rectangle(width - 200, 45, 120, 40, 0xFF9800, 0.95).setStrokeStyle(2, 0xFFFFFF, 0.8);
-    this.add.text(width - 200, 45, '🔄 刷新订单', {
+    if (progress.reputationStatus.penaltyActive) {
+      this.add.text(width - 30, 68, '⚠️ 信誉惩罚中', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '12px',
+        color: '#FFCDD2',
+        fontStyle: 'bold'
+      }).setOrigin(1, 0);
+    }
+
+    const refreshBtn = this.add.rectangle(width - 220, 45, 120, 40, 0xFF9800, 0.95).setStrokeStyle(2, 0xFFFFFF, 0.8);
+    this.add.text(width - 220, 45, '🔄 刷新订单', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '16px',
       color: '#FFFFFF',
@@ -73,7 +89,8 @@ export class OrderSelectScene extends Phaser.Scene {
     refreshBtn.on('pointerover', () => refreshBtn.setScale(1.05));
     refreshBtn.on('pointerout', () => refreshBtn.setScale(1));
     refreshBtn.on('pointerdown', () => {
-      this.orders = generateOrderPool(8);
+      const prog = loadProgress();
+      this.orders = generateOrderPool(8, undefined, prog);
       this.scrollY = 0;
       this.updateOrdersList();
     });
@@ -185,18 +202,48 @@ export class OrderSelectScene extends Phaser.Scene {
     });
   }
 
-  private createRecentOrders(): void {
+  private createRightPanel(): void {
     const { width } = this.scale;
     const x = 870;
 
     this.add.rectangle(x, 400, 250, 540, 0xFFFFFF, 0.95).setStrokeStyle(3, 0xCE93D8);
-    this.add.text(x, 170, '📜 最近订单', {
+
+    const tabRecent = this.add.rectangle(x - 60, 170, 110, 30, this.rightPanelMode === 'recent' ? 0xAB47BC : 0xE1BEE7, this.rightPanelMode === 'recent' ? 1 : 0.9).setStrokeStyle(2, 0xAB47BC);
+    this.add.text(x - 60, 170, '📜 最近订单', {
       fontFamily: 'Microsoft YaHei, sans-serif',
-      fontSize: '18px',
-      color: '#6A1B9A',
+      fontSize: '13px',
+      color: this.rightPanelMode === 'recent' ? '#FFFFFF' : '#6A1B9A',
       fontStyle: 'bold'
     }).setOrigin(0.5);
+    tabRecent.setInteractive({ useHandCursor: true });
+    tabRecent.on('pointerdown', () => {
+      this.rightPanelMode = 'recent';
+      this.selectedCustomerId = null;
+      this.scene.restart();
+    });
 
+    const tabCustomers = this.add.rectangle(x + 60, 170, 110, 30, this.rightPanelMode === 'customers' ? 0xAB47BC : 0xE1BEE7, this.rightPanelMode === 'customers' ? 1 : 0.9).setStrokeStyle(2, 0xAB47BC);
+    this.add.text(x + 60, 170, '👥 客户档案', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '13px',
+      color: this.rightPanelMode === 'customers' ? '#FFFFFF' : '#6A1B9A',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    tabCustomers.setInteractive({ useHandCursor: true });
+    tabCustomers.on('pointerdown', () => {
+      this.rightPanelMode = 'customers';
+      this.scene.restart();
+    });
+
+    if (this.rightPanelMode === 'recent') {
+      this.createRecentOrders();
+    } else {
+      this.createCustomerPanel();
+    }
+  }
+
+  private createRecentOrders(): void {
+    const x = 870;
     const recent = getRecentOrders(6);
     if (recent.length === 0) {
       this.add.text(x, 350, '暂无订单记录\n快去接单吧！', {
@@ -222,7 +269,7 @@ export class OrderSelectScene extends Phaser.Scene {
         fontStyle: 'bold'
       }).setOrigin(0, 0.5);
 
-      this.add.text(x - 100, y + 2, record.passed ? '✅ 通过  ' + record.score + '分' : '❌ 未通过  ' + record.score + '分', {
+      this.add.text(x - 100, y + 2, record.passed ? '✅ ' + record.score + '分' : '❌ ' + record.score + '分', {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '12px',
         color: record.passed ? '#2E7D32' : '#C62828'
@@ -241,7 +288,175 @@ export class OrderSelectScene extends Phaser.Scene {
         color: '#FBC02D',
         fontStyle: 'bold'
       }).setOrigin(1, 0.5);
+
+      if (record.isRepurchase) {
+        this.add.text(x + 100, y + 22, '🔄复购', {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '10px',
+          color: '#7B1FA2',
+          fontStyle: 'bold'
+        }).setOrigin(1, 0.5);
+      }
     });
+  }
+
+  private createCustomerPanel(): void {
+    const x = 870;
+    const customers = getAllCustomers();
+
+    if (customers.length === 0) {
+      this.add.text(x, 350, '暂无客户档案\n完成订单后自动建立', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '14px',
+        color: '#BDBDBD',
+        align: 'center'
+      }).setOrigin(0.5);
+      return;
+    }
+
+    if (!this.selectedCustomerId) {
+      const sortedCustomers = [...customers].sort((a, b) => b.lifetimeValue - a.lifetimeValue);
+      sortedCustomers.slice(0, 6).forEach((customer, i) => {
+        const y = 215 + i * 78;
+        const isHighSat = customer.satisfaction >= 70;
+        const color = isHighSat ? 0xF3E5F5 : 0xFFEBEE;
+        const borderColor = isHighSat ? 0xBA68C8 : 0xEF9A9A;
+
+        const card = this.add.rectangle(x, y, 220, 70, color, 0.8).setStrokeStyle(2, borderColor);
+        card.setInteractive({ useHandCursor: true });
+        card.on('pointerdown', () => {
+          this.selectedCustomerId = customer.id;
+          this.scene.restart();
+        });
+
+        this.add.text(x - 100, y - 25, customer.avatar + ' ' + customer.name, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '14px',
+          color: '#4A148C',
+          fontStyle: 'bold'
+        }).setOrigin(0, 0.5);
+
+        const satEmoji = getSatisfactionEmoji(customer.satisfaction);
+        this.add.text(x - 100, y, `${satEmoji} ${getSatisfactionLabel(customer.satisfaction)} (${customer.satisfaction})`, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '11px',
+          color: '#6A1B9A'
+        }).setOrigin(0, 0.5);
+
+        this.add.text(x - 100, y + 22, `🔄${getRepurchaseLabel(customer.repurchaseProbability)}  📋${customer.totalOrders}单`, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '10px',
+          color: '#7B1FA2'
+        }).setOrigin(0, 0.5);
+
+        this.add.text(x + 100, y, `💎${customer.lifetimeValue}`, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '12px',
+          color: '#FF6F00',
+          fontStyle: 'bold'
+        }).setOrigin(1, 0.5);
+      });
+      return;
+    }
+
+    const customer = customers.find(c => c.id === this.selectedCustomerId);
+    if (!customer) return;
+
+    const history = getCustomerHistory(customer.id);
+    const y = 210;
+
+    const backBtn = this.add.rectangle(x - 90, y, 50, 25, 0x9E9E9E, 0.9).setStrokeStyle(1, 0xFFFFFF);
+    this.add.text(x - 90, y, '←返回', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '11px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    backBtn.setInteractive({ useHandCursor: true });
+    backBtn.on('pointerdown', () => {
+      this.selectedCustomerId = null;
+      this.scene.restart();
+    });
+
+    this.add.text(x, y, customer.avatar + ' ' + customer.name, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '18px',
+      color: '#4A148C',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    this.add.text(x - 100, y + 35, `${getSatisfactionEmoji(customer.satisfaction)} 满意度: ${customer.satisfaction}`, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '12px',
+      color: '#6A1B9A'
+    }).setOrigin(0, 0.5);
+
+    this.add.text(x + 100, y + 35, `🔄 复购: ${customer.repurchaseProbability}%`, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '12px',
+      color: '#6A1B9A'
+    }).setOrigin(1, 0.5);
+
+    this.add.text(x - 100, y + 58, `📋 订单: ${customer.totalOrders} (✅${customer.completedOrders} ❌${customer.failedOrders})`, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '11px',
+      color: '#7B1FA2'
+    }).setOrigin(0, 0.5);
+
+    this.add.text(x + 100, y + 58, `💎 LTV: ${customer.lifetimeValue}`, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '11px',
+      color: '#FF6F00',
+      fontStyle: 'bold'
+    }).setOrigin(1, 0.5);
+
+    if (customer.tags.length > 0) {
+      this.add.text(x - 100, y + 85, '🏷 标签:', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '11px',
+        color: '#6A1B9A',
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5);
+
+      let tagX = x - 50;
+      let tagY = y + 85;
+      customer.tags.slice(0, 6).forEach((tag, i) => {
+        const tagInfo = CUSTOMER_TAG_NAMES[tag];
+        if (tagInfo) {
+          const tagText = `${tagInfo.icon}${tagInfo.name}`;
+          if (tagX > x + 70) {
+            tagX = x - 100;
+            tagY += 20;
+          }
+          this.add.text(tagX, tagY, tagText, {
+            fontFamily: 'Microsoft YaHei, sans-serif',
+            fontSize: '9px',
+            color: '#7B1FA2'
+          }).setOrigin(0, 0.5).setBackgroundColor('#F3E5F5').setPadding(3, 1);
+          tagX += 58;
+        }
+      });
+    }
+
+    if (history && history.visits.length > 0) {
+      const lastVisits = history.visits.slice(-3).reverse();
+      this.add.text(x - 100, y + 125, '📜 最近回访:', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '11px',
+        color: '#4A148C',
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5);
+
+      lastVisits.forEach((visit, i) => {
+        const vy = y + 145 + i * 22;
+        const deltaText = visit.satisfactionDelta >= 0 ? `+${visit.satisfactionDelta}` : `${visit.satisfactionDelta}`;
+        this.add.text(x - 100, vy, `${visit.passed ? '✅' : '❌'} ${visit.orderTitle.slice(0, 10)}  满意度${deltaText}`, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '10px',
+          color: visit.passed ? '#388E3C' : '#C62828'
+        }).setOrigin(0, 0.5);
+      });
+    }
   }
 
   private setupMouseWheelScroll(): void {
@@ -268,7 +483,7 @@ export class OrderSelectScene extends Phaser.Scene {
     }
 
     const cardW = 610;
-    const cardH = 130;
+    const cardH = 135;
     const gapY = 15;
     const totalHeight = filtered.length * (cardH + gapY);
     this.maxScrollY = Math.min(0, 510 - totalHeight);
@@ -287,25 +502,39 @@ export class OrderSelectScene extends Phaser.Scene {
     filtered.forEach((order, index) => {
       const y = this.scrollY + index * (cardH + gapY) + cardH / 2;
 
-      const card = this.add.rectangle(cardW / 2, y, cardW, cardH, 0xFFFFFF, 1).setStrokeStyle(2, 0xBBDEFB);
+      const isRepurchase = !!order.isRepurchase;
+      const bgColor = isRepurchase ? 0xF3E5F5 : 0xFFFFFF;
+      const borderColor = isRepurchase ? 0xBA68C8 : 0xBBDEFB;
+      const card = this.add.rectangle(cardW / 2, y, cardW, cardH, bgColor, 1).setStrokeStyle(2, borderColor);
       this.ordersContainer.add(card);
 
+      if (isRepurchase) {
+        const repurchaseTag = this.add.rectangle(535, y - 55, 80, 22, 0x9C27B0, 0.95).setStrokeStyle(1, 0xFFFFFF);
+        this.ordersContainer.add(repurchaseTag);
+        this.ordersContainer.add(this.add.text(535, y - 55, '🔄 回头客', {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '11px',
+          color: '#FFFFFF',
+          fontStyle: 'bold'
+        }).setOrigin(0.5));
+      }
+
       const diffColor = Number('0x' + DIFFICULTY_COLORS[order.difficulty].slice(1));
-      const diffTag = this.add.rectangle(70, y - 45, 70, 25, diffColor, 0.9).setStrokeStyle(1, 0xFFFFFF);
+      const diffTag = this.add.rectangle(isRepurchase ? 620 : 70, y - 55, 70, 25, diffColor, 0.9).setStrokeStyle(1, 0xFFFFFF);
       this.ordersContainer.add(diffTag);
-      this.ordersContainer.add(this.add.text(70, y - 45, ORDER_DIFFICULTY_NAMES[order.difficulty], {
+      this.ordersContainer.add(this.add.text(isRepurchase ? 620 : 70, y - 55, ORDER_DIFFICULTY_NAMES[order.difficulty], {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '13px',
         color: '#FFFFFF',
         fontStyle: 'bold'
       }).setOrigin(0.5));
 
-      this.ordersContainer.add(this.add.text(15, y - 45, order.customerAvatar, {
+      this.ordersContainer.add(this.add.text(15, y - 55, order.customerAvatar, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '22px'
       }).setOrigin(0, 0.5));
 
-      this.ordersContainer.add(this.add.text(120, y - 45, order.customerName + ' · ' + order.title, {
+      this.ordersContainer.add(this.add.text(isRepurchase ? 15 : 120, y - 55, order.customerName + ' · ' + order.title, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '16px',
         color: '#0D47A1',
@@ -381,7 +610,7 @@ export class OrderSelectScene extends Phaser.Scene {
 
       card.setInteractive({ useHandCursor: true });
       card.on('pointerover', () => card.setStrokeStyle(3, 0x2196F3));
-      card.on('pointerout', () => card.setStrokeStyle(2, 0xBBDEFB));
+      card.on('pointerout', () => card.setStrokeStyle(2, borderColor));
       card.on('pointerdown', () => {
         this.scene.start('OrderDetailScene', { order });
       });

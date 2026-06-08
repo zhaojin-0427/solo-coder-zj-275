@@ -2,9 +2,10 @@ import Phaser from 'phaser';
 import { ScoreResult, LevelConfig, Bouquet, Flower, Order } from '../types';
 import { FLOWERS } from '../data/flowers';
 import { SCENE_NAMES } from '../data/levels';
-import { PALETTE_NAMES, ORDER_DIFFICULTY_NAMES, DIFFICULTY_COLORS, ACHIEVEMENTS } from '../data/orders';
+import { PALETTE_NAMES, ORDER_DIFFICULTY_NAMES, DIFFICULTY_COLORS, ACHIEVEMENTS, CUSTOMER_TAG_NAMES, PROFESSION_RANK_NAMES } from '../data/orders';
 import { updateHighScore, completeLevel, unlockFlowers, completeOrder } from '../utils/storage';
 import { calculateBouquetPrice } from '../utils/colorHarmony';
+import { getSatisfactionEmoji, getSatisfactionLabel, getRepurchaseLabel, getExpProgressToNextRank } from '../utils/customerGrowth';
 
 export class ResultScene extends Phaser.Scene {
   private result!: ScoreResult;
@@ -17,6 +18,7 @@ export class ResultScene extends Phaser.Scene {
   private earnedCoins: number = 0;
   private earnedReputation: number = 0;
   private unlockedFlowerIds: string[] = [];
+  private satisfactionData: any = null;
 
   constructor() {
     super('ResultScene');
@@ -41,7 +43,7 @@ export class ResultScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor(this.result.passed ? '#E8F5E9' : '#FFEBEE');
 
-    if (this.isOrderMode && this.order && this.result.passed) {
+    if (this.isOrderMode && this.order) {
       this.processOrderResult();
     } else if (this.level && this.result.passed) {
       completeLevel(this.level.id);
@@ -53,6 +55,11 @@ export class ResultScene extends Phaser.Scene {
 
     this.createResultHeader();
     this.createScoreBreakdown();
+
+    if (this.isOrderMode) {
+      this.createCustomerSatisfactionSection();
+    }
+
     this.createBouquetSummary();
     this.createFeedback();
 
@@ -72,17 +79,18 @@ export class ResultScene extends Phaser.Scene {
     this.earnedReputation = this.order!.reputationReward;
     this.unlockedFlowerIds = this.order!.unlockReward || [];
 
-    const { newAchievements } = completeOrder(
+    const result = completeOrder(
       this.order!,
-      this.result.totalScore,
-      this.result.passed,
+      this.result,
+      this.bouquet,
       this.earnedCoins,
       this.earnedReputation,
       this.unlockedFlowerIds,
       this.achievedBonusIds,
       usedFlowerIds
     );
-    this.newAchievements = newAchievements;
+    this.newAchievements = result.newAchievements;
+    this.satisfactionData = result.satisfaction;
   }
 
   private createResultHeader(): void {
@@ -151,7 +159,7 @@ export class ResultScene extends Phaser.Scene {
 
   private createScoreBreakdown(): void {
     const { width } = this.scale;
-    const y = this.isOrderMode ? 340 : 330;
+    const y = this.isOrderMode ? 310 : 330;
 
     const items: { label: string; score: number; desc: string; color: string }[] = this.isOrderMode
       ? [
@@ -214,6 +222,83 @@ export class ResultScene extends Phaser.Scene {
     }
   }
 
+  private createCustomerSatisfactionSection(): void {
+    if (!this.satisfactionData) return;
+    const { width } = this.scale;
+    const y = 470;
+
+    this.add.rectangle(width / 2, y, width - 40, 90, 0xFFFFFF, 0.95).setStrokeStyle(3, 0xCE93D8);
+
+    this.add.text(30, y - 35, '💝 客户反馈:', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '16px',
+      color: '#6A1B9A',
+      fontStyle: 'bold'
+    });
+
+    const satEmoji = getSatisfactionEmoji(this.satisfactionData.satisfaction);
+    const satLabel = getSatisfactionLabel(this.satisfactionData.satisfaction);
+    const satDelta = this.satisfactionData.satisfactionDelta;
+    const deltaText = satDelta >= 0 ? `(+${satDelta})` : `(${satDelta})`;
+    const deltaColor = satDelta >= 0 ? '#2E7D32' : '#C62828';
+
+    this.add.text(30, y - 5, `${satEmoji} 满意度: ${this.satisfactionData.satisfaction} - ${satLabel} ${deltaText}`, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '14px',
+      color: '#4A148C',
+      fontStyle: 'bold'
+    });
+
+    const repLabel = getRepurchaseLabel(this.satisfactionData.repurchaseProbability);
+    const repDelta = this.satisfactionData.repurchaseDelta;
+    const repDeltaText = repDelta >= 0 ? `(+${repDelta})` : `(${repDelta})`;
+    const repDeltaColor = repDelta >= 0 ? '#2E7D32' : '#C62828';
+
+    this.add.text(30, y + 18, `🔄 复购意愿: ${this.satisfactionData.repurchaseProbability}% - ${repLabel} ${repDeltaText}`, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '14px',
+      color: '#6A1B9A'
+    });
+
+    const gainedExp = this.satisfactionData.gainedExp || 0;
+    this.add.text(width - 30, y - 35, `📈 职业经验 +${gainedExp}`, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '14px',
+      color: '#E65100',
+      fontStyle: 'bold'
+    }).setOrigin(1, 0);
+
+    if (this.satisfactionData.newTags && this.satisfactionData.newTags.length > 0) {
+      const tagNames = this.satisfactionData.newTags.map((t: string) => {
+        const info = CUSTOMER_TAG_NAMES[t as keyof typeof CUSTOMER_TAG_NAMES];
+        return info ? `${info.icon}${info.name}` : t;
+      }).join('、');
+      this.add.text(width - 30, y - 5, `🏷 新标签: ${tagNames}`, {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '12px',
+        color: '#7B1FA2'
+      }).setOrigin(1, 0);
+    }
+
+    if (this.satisfactionData.scoreDetail) {
+      const sd = this.satisfactionData.scoreDetail;
+      this.add.text(width - 30, y + 18, `📊 花语${sd.meaningMatchScore}% 色系${sd.paletteMatchScore}% 预算${sd.budgetControlScore}%`, {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '11px',
+        color: '#616161'
+      }).setOrigin(1, 0);
+    }
+
+    if (this.satisfactionData.feedback && this.satisfactionData.feedback.length > 0) {
+      this.add.text(30, y + 40, this.satisfactionData.feedback[0], {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '12px',
+        color: '#424242',
+        wordWrap: { width: width - 60 }
+      });
+    }
+  }
+
   private calculatePaletteScore(): number {
     if (!this.isOrderMode || !this.order!.preferredColorHues) return 100;
     const flowers = [this.bouquet.mainFlower, ...this.bouquet.fillerFlowers, this.bouquet.wrapping].filter(Boolean) as Flower[];
@@ -228,7 +313,7 @@ export class ResultScene extends Phaser.Scene {
 
   private createBouquetSummary(): void {
     const { width } = this.scale;
-    const y = this.isOrderMode ? 490 : 510;
+    const y = this.isOrderMode ? 580 : 510;
     this.add.text(100, y - 15, '你的花束:', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '18px',
@@ -259,7 +344,7 @@ export class ResultScene extends Phaser.Scene {
   }
 
   private createFeedback(): void {
-    const fbY = this.isOrderMode ? 545 : 560;
+    const fbY = this.isOrderMode ? 625 : 560;
     this.add.text(100, fbY, '📝 评分说明:', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '18px',
@@ -280,7 +365,7 @@ export class ResultScene extends Phaser.Scene {
 
   private createRewardsSection(): void {
     if (!this.result.passed) return;
-    const baseY = 610;
+    const baseY = 720;
 
     this.add.text(100, baseY, '🎁 获得奖励:', {
       fontFamily: 'Microsoft YaHei, sans-serif',
@@ -293,6 +378,9 @@ export class ResultScene extends Phaser.Scene {
     const rewardItems: { icon: string; text: string; color: string }[] = [];
     rewardItems.push({ icon: '💰', text: this.earnedCoins + ' 金币', color: '#FF9800' });
     rewardItems.push({ icon: '⭐', text: this.earnedReputation + ' 声望', color: '#FBC02D' });
+    if (this.satisfactionData?.gainedExp) {
+      rewardItems.push({ icon: '📈', text: '+' + this.satisfactionData.gainedExp + ' 经验', color: '#795548' });
+    }
 
     if (this.unlockedFlowerIds.length > 0) {
       const unlockNames = this.unlockedFlowerIds.map(id => {
@@ -309,7 +397,7 @@ export class ResultScene extends Phaser.Scene {
         color: item.color,
         fontStyle: 'bold'
       });
-      rx += 280;
+      rx += 260;
     });
 
     if (this.newAchievements.length > 0) {

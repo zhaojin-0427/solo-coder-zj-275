@@ -1,7 +1,8 @@
-import { Order, OrderDifficulty, Scene, Season, ColorPalette, BonusTarget, Bouquet, ScoreResult } from '../types';
+import { Order, OrderDifficulty, Scene, Season, ColorPalette, BonusTarget, Bouquet, ScoreResult, CustomerProfile, GameProgress } from '../types';
 import { FLOWERS } from '../data/flowers';
-import { CUSTOMERS, PALETTE_HUES, SCENE_ORDER_TEMPLATES, SEASONAL_HINTS, HARMONY_HINTS_BY_PALETTE, BONUS_TARGET_POOL } from '../data/orders';
+import { CUSTOMERS, PALETTE_HUES, SCENE_ORDER_TEMPLATES, SEASONAL_HINTS, HARMONY_HINTS_BY_PALETTE, BONUS_TARGET_POOL, CUSTOMER_IDS } from '../data/orders';
 import { SCENE_NAMES, SEASON_NAMES } from '../data/levels';
+import { getOrderRewardMultiplier, initializeCustomerProfile } from './customerGrowth';
 
 function seededRandom(seed: number): () => number {
   let s = seed;
@@ -138,7 +139,7 @@ function calculateSimplePrice(bouquet: Bouquet): number {
   return total;
 }
 
-export function generateOrder(seed: number, difficulty?: OrderDifficulty): Order {
+export function generateOrder(seed: number, difficulty?: OrderDifficulty, customerIndex?: number, progress?: GameProgress): Order {
   const rand = seededRandom(seed);
   const difficulties: OrderDifficulty[] = ['easy', 'medium', 'hard', 'expert'];
   const selectedDifficulty = difficulty || pickRandom(difficulties, rand);
@@ -148,10 +149,12 @@ export function generateOrder(seed: number, difficulty?: OrderDifficulty): Order
   const seasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
   const palettes: ColorPalette[] = ['warm', 'cool', 'pastel', 'monochrome', 'vibrant', 'elegant'];
 
+  const actualCustomerIndex = customerIndex ?? Math.floor(rand() * CUSTOMERS.length);
   const scene = pickRandom(scenes, rand);
   const season = pickRandom(seasons, rand);
   const palette = pickRandom(palettes, rand);
-  const customer = pickRandom(CUSTOMERS, rand);
+  const customer = CUSTOMERS[actualCustomerIndex % CUSTOMERS.length];
+  const customerId = CUSTOMER_IDS[actualCustomerIndex % CUSTOMER_IDS.length];
 
   const template = SCENE_ORDER_TEMPLATES[scene];
   const titleIdx = Math.floor(rand() * template.titles.length);
@@ -173,8 +176,14 @@ export function generateOrder(seed: number, difficulty?: OrderDifficulty): Order
   const selectedBonuses = pickRandomN(BONUS_TARGET_POOL, bonusCount, rand);
   const bonusTargets = buildBonusTargets(selectedBonuses);
 
-  const coinReward = randInRange(config.coinReward, rand);
-  const reputationReward = randInRange(config.reputationReward, rand);
+  let coinReward = randInRange(config.coinReward, rand);
+  let reputationReward = randInRange(config.reputationReward, rand);
+
+  if (progress) {
+    const multiplier = getOrderRewardMultiplier(progress.professionRank);
+    coinReward = Math.round(coinReward * multiplier);
+    reputationReward = Math.round(reputationReward * multiplier);
+  }
 
   let unlockReward: string[] | undefined;
   if (rand() < config.unlockChance) {
@@ -190,6 +199,7 @@ export function generateOrder(seed: number, difficulty?: OrderDifficulty): Order
     id: `order_${seed}_${Date.now()}`,
     customerName: customer.name,
     customerAvatar: customer.avatar,
+    customerId,
     title,
     description,
     difficulty: selectedDifficulty,
@@ -213,17 +223,150 @@ export function generateOrder(seed: number, difficulty?: OrderDifficulty): Order
   };
 }
 
-export function generateOrderPool(count: number = 8, baseSeed?: number): Order[] {
+export function generateRepurchaseOrder(
+  customer: CustomerProfile,
+  seed: number,
+  progress: GameProgress
+): Order {
+  const rand = seededRandom(seed);
+
+  const difficulties: OrderDifficulty[] = ['easy', 'medium', 'hard', 'expert'];
+  let diffPool: OrderDifficulty[];
+  if (customer.totalOrders >= 10) {
+    diffPool = ['medium', 'hard', 'expert'];
+  } else if (customer.totalOrders >= 5) {
+    diffPool = ['easy', 'medium', 'hard'];
+  } else {
+    diffPool = ['easy', 'medium'];
+  }
+  const selectedDifficulty = pickRandom(diffPool, rand);
+  const config = getDifficultyConfig(selectedDifficulty);
+
+  let scene: Scene;
+  if (customer.preferredScenes.length > 0 && rand() < 0.6) {
+    scene = pickRandom(customer.preferredScenes, rand);
+  } else {
+    const allScenes: Scene[] = ['birthday', 'wedding', 'condolence', 'graduation', 'romantic', 'appreciation'];
+    scene = pickRandom(allScenes, rand);
+  }
+
+  let season: Season;
+  if (customer.preferredSeasons.length > 0 && rand() < 0.5) {
+    season = pickRandom(customer.preferredSeasons, rand);
+  } else {
+    const allSeasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+    season = pickRandom(allSeasons, rand);
+  }
+
+  let palette: ColorPalette;
+  if (customer.preferredPalettes.length > 0 && rand() < 0.6) {
+    palette = pickRandom(customer.preferredPalettes, rand);
+  } else {
+    const allPalettes: ColorPalette[] = ['warm', 'cool', 'pastel', 'monochrome', 'vibrant', 'elegant'];
+    palette = pickRandom(allPalettes, rand);
+  }
+
+  const template = SCENE_ORDER_TEMPLATES[scene];
+  const titleIdx = Math.floor(rand() * template.titles.length);
+  const title = template.titles[titleIdx];
+  const description = template.descriptions[Math.floor(rand() * template.descriptions.length)];
+
+  const meaningsCount = randInRange(config.requiredMeaningsCount, rand);
+  let requiredMeanings: string[];
+  if (customer.preferredMeanings.length > 0 && rand() < 0.5) {
+    requiredMeanings = pickRandomN(customer.preferredMeanings, Math.min(meaningsCount, customer.preferredMeanings.length), rand);
+    if (requiredMeanings.length < meaningsCount) {
+      const extra = pickRandomN(template.meanings.flat().filter(m => !requiredMeanings.includes(m)), meaningsCount - requiredMeanings.length, rand);
+      requiredMeanings = [...requiredMeanings, ...extra];
+    }
+  } else {
+    requiredMeanings = pickRandomN(template.meanings.flat(), meaningsCount, rand);
+  }
+
+  const budget = randInRange(config.budget, rand);
+  const timeLimit = randInRange(config.timeLimit, rand);
+  const targetScore = randInRange(config.targetScore, rand);
+
+  const unlockedFlowers = FLOWERS.filter(f => f.unlocked).map(f => f.id);
+  const forbiddenCount = randInRange(config.forbiddenCount, rand);
+  const forbiddenFlowerIds = pickRandomN(unlockedFlowers, forbiddenCount, rand);
+
+  const bonusCount = randInRange(config.bonusCount, rand);
+  const selectedBonuses = pickRandomN(BONUS_TARGET_POOL, bonusCount, rand);
+  const bonusTargets = buildBonusTargets(selectedBonuses);
+
+  let coinReward = Math.round(randInRange(config.coinReward, rand) * (1 + customer.lifetimeValue / 1000));
+  let reputationReward = Math.round(randInRange(config.reputationReward, rand) * 1.2);
+
+  const multiplier = getOrderRewardMultiplier(progress.professionRank);
+  coinReward = Math.round(coinReward * multiplier);
+  reputationReward = Math.round(reputationReward * multiplier);
+
+  let unlockReward: string[] | undefined;
+  if (rand() < config.unlockChance * 1.2) {
+    const lockedFlowers = FLOWERS.filter(f => !f.unlocked).map(f => f.id);
+    if (lockedFlowers.length > 0) {
+      unlockReward = pickRandomN(lockedFlowers, selectedDifficulty === 'expert' ? 2 : 1, rand);
+    }
+  }
+
+  const harmonyHint = HARMONY_HINTS_BY_PALETTE[palette] + '。' + SEASONAL_HINTS[season];
+
+  return {
+    id: `repurchase_${customer.id}_${seed}_${Date.now()}`,
+    customerName: customer.name,
+    customerAvatar: customer.avatar,
+    customerId: customer.id,
+    title: `[回头客] ${title}`,
+    description: `老客户再次光临！${description}`,
+    difficulty: selectedDifficulty,
+    scene,
+    budget: Math.round(budget * 1.1),
+    season,
+    forbiddenFlowerIds,
+    requiredMeanings,
+    preferredPalette: palette,
+    preferredColorHues: PALETTE_HUES[palette],
+    minHarmonyScore: config.minHarmonyScore,
+    timeLimit,
+    targetScore,
+    bonusTargets,
+    unlockReward,
+    coinReward,
+    reputationReward,
+    harmonyHint,
+    deadline: Date.now() + 24 * 60 * 60 * 1000,
+    orderPoolSeed: seed,
+    isRepurchase: true,
+    customerNotes: customer.tags.length > 0 ? `客户偏好标签已生成，请用心服务！` : undefined
+  };
+}
+
+export function generateOrderPool(count: number = 8, baseSeed?: number, progress?: GameProgress): Order[] {
   const seed = baseSeed || Date.now();
   const orders: Order[] = [];
   const difficulties: OrderDifficulty[] = ['easy', 'easy', 'medium', 'medium', 'hard', 'hard', 'expert'];
 
-  for (let i = 0; i < count; i++) {
-    const orderSeed = seed + i * 1000 + Math.floor(Math.random() * 999);
-    const diff = difficulties[i % difficulties.length];
-    orders.push(generateOrder(orderSeed, diff));
+  if (progress) {
+    const customersWithHighRepurchase = Object.values(progress.customers).filter(
+      c => c.repurchaseProbability >= 50 && c.totalOrders > 0
+    );
+    const repurchaseCount = Math.min(2, customersWithHighRepurchase.length, Math.floor(count * 0.25));
+    for (let i = 0; i < repurchaseCount; i++) {
+      const customer = customersWithHighRepurchase[Math.floor(Math.random() * customersWithHighRepurchase.length)];
+      const orderSeed = seed + i * 2000 + Math.floor(Math.random() * 999);
+      orders.push(generateRepurchaseOrder(customer, orderSeed, progress));
+    }
   }
 
+  const remainingCount = count - orders.length;
+  for (let i = 0; i < remainingCount; i++) {
+    const orderSeed = seed + (i + 10) * 1000 + Math.floor(Math.random() * 999);
+    const diff = difficulties[i % difficulties.length];
+    orders.push(generateOrder(orderSeed, diff, undefined, progress));
+  }
+
+  orders.sort(() => Math.random() - 0.5);
   return orders;
 }
 
@@ -235,20 +378,31 @@ export function getSeasonName(season: Season): string {
   return SEASON_NAMES[season] || season;
 }
 
-export function checkAchievements(progress: { completedOrders: any[]; coins: number; customerReputation: number; unlockedFlowers: string[]; highScores?: Record<number, number> }): string[] {
+export function checkAchievements(progress: any): string[] {
   const newAchievements: string[] = [];
-  const orderCount = progress.completedOrders.length;
+  const orderCount = progress.completedOrders?.length || 0;
   const highScores = progress.highScores || {};
-  const maxScore = Math.max(0, ...Object.values(highScores));
+  const maxScore = Math.max(0, ...(Object.values(highScores) as number[]));
 
   if (orderCount >= 1) newAchievements.push('first_order');
   if (orderCount >= 10) newAchievements.push('ten_orders');
   if (orderCount >= 50) newAchievements.push('fifty_orders');
   if (orderCount >= 100) newAchievements.push('hundred_orders');
   if (maxScore >= 100) newAchievements.push('perfect_score');
-  if (progress.unlockedFlowers.length >= FLOWERS.length) newAchievements.push('all_flowers');
+  if (progress.unlockedFlowers?.length >= FLOWERS.length) newAchievements.push('all_flowers');
   if (progress.customerReputation >= 100) newAchievements.push('reputation_100');
-  if (progress.coins >= 1000) newAchievements.push('rich_florist');
+  if ((progress.totalEarnedCoins || progress.coins || 0) >= 1000) newAchievements.push('rich_florist');
+
+  if (progress.repurchaseOrderCount >= 1) newAchievements.push('first_repurchase');
+
+  const satisfiedCustomers = Object.values(progress.customers || {}).filter(
+    (c: any) => c.satisfaction >= 80
+  ).length;
+  if (satisfiedCustomers >= 5) newAchievements.push('loyal_customers');
+
+  if (progress.professionRank && progress.professionRank !== 'apprentice') {
+    newAchievements.push('promotion');
+  }
 
   return newAchievements;
 }

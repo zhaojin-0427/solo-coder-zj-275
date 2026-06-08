@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import { Order, FlowerType } from '../types';
 import { FLOWERS } from '../data/flowers';
-import { loadProgress } from '../utils/storage';
-import { ORDER_DIFFICULTY_NAMES, DIFFICULTY_COLORS, PALETTE_NAMES } from '../data/orders';
+import { loadProgress, getCustomerProfile, getCustomerHistory } from '../utils/storage';
+import { ORDER_DIFFICULTY_NAMES, DIFFICULTY_COLORS, PALETTE_NAMES, CUSTOMER_TAG_NAMES } from '../data/orders';
 import { SCENE_NAMES, SEASON_NAMES } from '../data/levels';
+import { getSatisfactionEmoji, getSatisfactionLabel, getRepurchaseLabel, getFlowerDiscount } from '../utils/customerGrowth';
 
 export class OrderDetailScene extends Phaser.Scene {
   private order!: Order;
@@ -27,6 +28,7 @@ export class OrderDetailScene extends Phaser.Scene {
 
     this.createHeader();
     this.createOrderInfo();
+    this.createCustomerPanel();
     this.createFlowerLibrary();
     this.createActionButtons();
     this.setupMouseWheelScroll();
@@ -65,6 +67,16 @@ export class OrderDetailScene extends Phaser.Scene {
       color: '#E65100',
       fontStyle: 'bold'
     });
+
+    if (this.order.isRepurchase) {
+      this.add.text(300, 90, '🔄 回头客订单', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '12px',
+        color: '#FFFFFF',
+        fontStyle: 'bold',
+        backgroundColor: '#9C27B0'
+      }).setPadding(8, 3);
+    }
 
     this.add.text(40, 115, '💐 ' + this.order.title, {
       fontFamily: 'Microsoft YaHei, sans-serif',
@@ -189,11 +201,84 @@ export class OrderDetailScene extends Phaser.Scene {
     });
   }
 
+  private createCustomerPanel(): void {
+    const { width } = this.scale;
+    if (!this.order.customerId) return;
+
+    const customer = getCustomerProfile(this.order.customerId);
+    const history = getCustomerHistory(this.order.customerId);
+    if (!customer) return;
+
+    const y = 420;
+    this.add.rectangle(width / 2, y, width - 40, 80, 0xFCE4EC, 0.95).setStrokeStyle(2, 0xF48FB1);
+
+    this.add.text(40, y - 30, '👤 客户画像', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '14px',
+      color: '#AD1457',
+      fontStyle: 'bold'
+    });
+
+    this.add.text(40, y - 3, `${customer.avatar} ${customer.name}  ` +
+      `${getSatisfactionEmoji(customer.satisfaction)}${getSatisfactionLabel(customer.satisfaction)}(${customer.satisfaction})  ` +
+      `🔄${getRepurchaseLabel(customer.repurchaseProbability)}(${customer.repurchaseProbability}%)  ` +
+      `📋历史订单:${customer.totalOrders}  💎消费:${customer.lifetimeValue}`, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '11px',
+      color: '#6A1B9A'
+    });
+
+    if (customer.tags.length > 0) {
+      this.add.text(40, y + 18, '🏷 客户标签:', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '11px',
+        color: '#7B1FA2',
+        fontStyle: 'bold'
+      });
+      let tagX = 130;
+      customer.tags.slice(0, 8).forEach((tag, i) => {
+        const tagInfo = CUSTOMER_TAG_NAMES[tag];
+        if (tagInfo) {
+          const tagText = `${tagInfo.icon}${tagInfo.name}`;
+          const displayTag = this.add.text(tagX, y + 18, tagText, {
+            fontFamily: 'Microsoft YaHei, sans-serif',
+            fontSize: '10px',
+            color: '#7B1FA2'
+          }).setOrigin(0, 0.5).setBackgroundColor('#F8BBD0').setPadding(4, 2);
+          tagX += displayTag.width + 8;
+        }
+      });
+    }
+
+    if (this.order.customerNotes) {
+      this.add.text(40, y + 38, `💬 客户留言: "${this.order.customerNotes}"`, {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '10px',
+        color: '#880E4F',
+        fontStyle: 'italic'
+      });
+    }
+
+    if (history && history.visits.length > 0) {
+      const lastVisit = history.visits[history.visits.length - 1];
+      if (lastVisit) {
+        const deltaText = lastVisit.satisfactionDelta >= 0 ? `+${lastVisit.satisfactionDelta}` : `${lastVisit.satisfactionDelta}`;
+        this.add.text(width - 40, y - 3, `📜 上次:${lastVisit.passed ? '✅' : '❌'}${lastVisit.orderTitle.slice(0, 8)} 满意度${deltaText}`, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '10px',
+          color: lastVisit.passed ? '#388E3C' : '#C62828'
+        }).setOrigin(1, 0);
+      }
+    }
+  }
+
   private createFlowerLibrary(): void {
     const { width } = this.scale;
-    const libY = 400;
+    const progress = loadProgress();
+    const discount = getFlowerDiscount(progress.professionRank);
+    const libY = 510;
 
-    this.add.rectangle(width / 2, libY + 75, width - 40, 130, 0xFFFFFF, 0.95).setStrokeStyle(3, 0x81C784);
+    this.add.rectangle(width / 2, libY + 65, width - 40, 115, 0xFFFFFF, 0.95).setStrokeStyle(3, 0x81C784);
 
     this.add.text(30, libY - 5, '🌺 可用花材库', {
       fontFamily: 'Microsoft YaHei, sans-serif',
@@ -201,6 +286,15 @@ export class OrderDetailScene extends Phaser.Scene {
       color: '#2E7D32',
       fontStyle: 'bold'
     });
+
+    if (discount > 0) {
+      this.add.text(220, libY - 3, `🎁 花材折扣: -${Math.round(discount * 100)}% (职业等级加成)`, {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '11px',
+        color: '#FF6F00',
+        fontStyle: 'bold'
+      });
+    }
 
     const filters: { key: 'all' | FlowerType; label: string }[] = [
       { key: 'all', label: '全部' },
@@ -210,7 +304,7 @@ export class OrderDetailScene extends Phaser.Scene {
     ];
 
     filters.forEach((f, i) => {
-      const fx = 260 + i * 75;
+      const fx = 430 + i * 75;
       const isActive = this.flowerFilter === f.key;
       const btn = this.add.rectangle(fx, libY + 5, 68, 25, isActive ? 0x66BB6A : 0xE0E0E0, isActive ? 1 : 0.9).setStrokeStyle(2, isActive ? 0x388E3C : 0xBDBDBD);
       this.add.text(fx, libY + 5, f.label, {
@@ -244,7 +338,7 @@ export class OrderDetailScene extends Phaser.Scene {
 
     this.maskRect = this.make.graphics({});
     this.maskRect.fillStyle(0xFFFFFF, 1);
-    this.maskRect.fillRect(30, libY + 22, width - 60, 100);
+    this.maskRect.fillRect(30, libY + 22, width - 60, 85);
 
     this.flowersContainer = this.add.container(30, libY + 22);
     this.flowersContainer.setMask(this.maskRect.createGeometryMask());
@@ -259,7 +353,7 @@ export class OrderDetailScene extends Phaser.Scene {
   private setupMouseWheelScroll(): void {
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: any[], _deltaX: number, deltaY: number) => {
       const pointerY = this.input.activePointer.y;
-      if (pointerY >= 422 && pointerY <= 522) {
+      if (pointerY >= 532 && pointerY <= 617) {
         this.scrollY += deltaY;
         this.scrollY = Phaser.Math.Clamp(this.scrollY, this.maxScrollY, 0);
         this.updateFlowerList();
@@ -271,6 +365,7 @@ export class OrderDetailScene extends Phaser.Scene {
     this.flowersContainer.removeAll(true);
     const { width } = this.scale;
     const progress = loadProgress();
+    const discount = getFlowerDiscount(progress.professionRank);
 
     let filtered = FLOWERS.filter(f => {
       if (!progress.unlockedFlowers.includes(f.id) && !this.showForbidden) return false;
@@ -280,16 +375,16 @@ export class OrderDetailScene extends Phaser.Scene {
     });
 
     const cardW = 82;
-    const cardH = 90;
+    const cardH = 80;
     const gapX = 6;
     const cols = Math.floor((width - 70) / (cardW + gapX));
     const totalRows = Math.ceil(filtered.length / cols);
     const totalHeight = totalRows * (cardH + 8);
-    this.maxScrollY = Math.min(0, 95 - totalHeight);
+    this.maxScrollY = Math.min(0, 80 - totalHeight);
     this.scrollY = Phaser.Math.Clamp(this.scrollY, this.maxScrollY, 0);
 
     if (filtered.length === 0) {
-      this.flowersContainer.add(this.add.text(500, 45, '暂无花材', {
+      this.flowersContainer.add(this.add.text(500, 40, '暂无花材', {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '14px',
         color: '#9E9E9E'
@@ -307,6 +402,7 @@ export class OrderDetailScene extends Phaser.Scene {
       const isUnlocked = progress.unlockedFlowers.includes(flower.id);
       const isInSeason = flower.seasons.includes(this.order.season);
       const matchesMeaning = this.order.requiredMeanings.includes(flower.meaning);
+      const discountedPrice = Math.round(flower.price * (1 - discount));
 
       let bgColor = 0xFFFFFF;
       let borderColor = 0xE0E0E0;
@@ -318,52 +414,66 @@ export class OrderDetailScene extends Phaser.Scene {
       this.flowersContainer.add(card);
 
       if (isUnlocked) {
-        const colorCircle = this.add.circle(x, y - 22, 16, Number('0x' + flower.color.hex.slice(1))).setStrokeStyle(2, 0x9E9E9E);
+        const colorCircle = this.add.circle(x, y - 20, 15, Number('0x' + flower.color.hex.slice(1))).setStrokeStyle(2, 0x9E9E9E);
         this.flowersContainer.add(colorCircle);
 
-        this.flowersContainer.add(this.add.text(x, y + 5, flower.name, {
+        this.flowersContainer.add(this.add.text(x, y + 6, flower.name, {
           fontFamily: 'Microsoft YaHei, sans-serif',
-          fontSize: '11px',
+          fontSize: '10px',
           color: '#333333',
           fontStyle: 'bold'
         }).setOrigin(0.5));
 
-        this.flowersContainer.add(this.add.text(x, y + 20, flower.price + '元', {
-          fontFamily: 'Microsoft YaHei, sans-serif',
-          fontSize: '10px',
-          color: matchesMeaning ? '#2E7D32' : '#666666'
-        }).setOrigin(0.5));
+        if (discount > 0 && discountedPrice < flower.price) {
+          this.flowersContainer.add(this.add.text(x, y + 20, `¥${discountedPrice}`, {
+            fontFamily: 'Microsoft YaHei, sans-serif',
+            fontSize: '10px',
+            color: '#FF6F00',
+            fontStyle: 'bold'
+          }).setOrigin(0.5));
+          this.flowersContainer.add(this.add.text(x, y + 31, `原¥${flower.price}`, {
+            fontFamily: 'Microsoft YaHei, sans-serif',
+            fontSize: '8px',
+            color: '#9E9E9E'
+          }).setOrigin(0.5));
+        } else {
+          this.flowersContainer.add(this.add.text(x, y + 20, flower.price + '元', {
+            fontFamily: 'Microsoft YaHei, sans-serif',
+            fontSize: '10px',
+            color: matchesMeaning ? '#2E7D32' : '#666666'
+          }).setOrigin(0.5));
+        }
 
         if (isForbidden) {
-          this.flowersContainer.add(this.add.text(x, y + 33, '🚫禁用', {
+          this.flowersContainer.add(this.add.text(x, y + 31, '🚫禁用', {
             fontFamily: 'Microsoft YaHei, sans-serif',
-            fontSize: '9px',
+            fontSize: '8px',
             color: '#C62828',
             fontStyle: 'bold'
           }).setOrigin(0.5));
         } else if (matchesMeaning) {
-          this.flowersContainer.add(this.add.text(x, y + 33, '✓花语', {
+          this.flowersContainer.add(this.add.text(x, y + 31, '✓花语', {
             fontFamily: 'Microsoft YaHei, sans-serif',
-            fontSize: '9px',
+            fontSize: '8px',
             color: '#2E7D32',
             fontStyle: 'bold'
           }).setOrigin(0.5));
         } else if (!isInSeason) {
-          this.flowersContainer.add(this.add.text(x, y + 33, '非当季', {
+          this.flowersContainer.add(this.add.text(x, y + 31, '非当季', {
             fontFamily: 'Microsoft YaHei, sans-serif',
-            fontSize: '9px',
+            fontSize: '8px',
             color: '#9E9E9E'
           }).setOrigin(0.5));
         }
       } else {
-        this.flowersContainer.add(this.add.circle(x, y - 10, 18, 0xBDBDBD, 0.5));
-        this.flowersContainer.add(this.add.text(x, y - 10, '🔒', {
+        this.flowersContainer.add(this.add.circle(x, y - 5, 16, 0xBDBDBD, 0.5));
+        this.flowersContainer.add(this.add.text(x, y - 5, '🔒', {
           fontFamily: 'Microsoft YaHei, sans-serif',
-          fontSize: '14px'
+          fontSize: '13px'
         }).setOrigin(0.5));
-        this.flowersContainer.add(this.add.text(x, y + 20, '未解锁', {
+        this.flowersContainer.add(this.add.text(x, y + 18, '未解锁', {
           fontFamily: 'Microsoft YaHei, sans-serif',
-          fontSize: '10px',
+          fontSize: '9px',
           color: '#9E9E9E'
         }).setOrigin(0.5));
       }
@@ -372,9 +482,9 @@ export class OrderDetailScene extends Phaser.Scene {
 
   private createActionButtons(): void {
     const { width } = this.scale;
-    const btnY = 600;
+    const btnY = 635;
 
-    this.add.rectangle(width / 2, btnY + 40, width - 40, 70, 0xFFF3E0, 0.95).setStrokeStyle(2, 0xFFCC80);
+    this.add.rectangle(width / 2, btnY + 35, width - 40, 60, 0xFFF3E0, 0.95).setStrokeStyle(2, 0xFFCC80);
 
     const startBtn = this.add.rectangle(width / 2 + 120, btnY, 200, 50, 0x4CAF50, 0.95).setStrokeStyle(3, 0xFFFFFF, 0.8);
     this.add.text(width / 2 + 120, btnY, '🚀 开始搭配', {
