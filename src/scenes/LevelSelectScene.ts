@@ -34,9 +34,9 @@ export class LevelSelectScene extends Phaser.Scene {
     const progress = loadProgress();
     const cols = 3;
     const startX = 180;
-    const startY = 180;
+    const startY = 250;
     const cardWidth = 300;
-    const cardHeight = 220;
+    const cardHeight = 200;
     const gapX = 40;
     const gapY = 30;
 
@@ -70,38 +70,38 @@ export class LevelSelectScene extends Phaser.Scene {
 
       const difficultyColor = level.difficulty === 'easy' ? '#4CAF50' : level.difficulty === 'medium' ? '#FF9800' : '#F44336';
 
-      this.add.text(x, y - 90, `第${level.id}关`, {
+      this.add.text(x, y - 80, `第${level.id}关`, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '16px',
         color: '#9E9E9E'
       }).setOrigin(0.5);
 
-      this.add.text(x, y - 60, level.name, {
+      this.add.text(x, y - 50, level.name, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '24px',
         color: '#4A148C',
         fontStyle: 'bold'
       }).setOrigin(0.5);
 
-      this.add.text(x, y - 20, `场景: ${SCENE_NAMES[level.scene]}`, {
+      this.add.text(x, y - 15, `场景: ${SCENE_NAMES[level.scene]}`, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '16px',
         color: '#333333'
       }).setOrigin(0.5);
 
-      this.add.text(x, y + 10, `季节: ${SEASON_NAMES[level.season]}  |  预算: ¥${level.budget}`, {
+      this.add.text(x, y + 12, `季节: ${SEASON_NAMES[level.season]}  |  预算: ¥${level.budget}`, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '14px',
         color: '#555555'
       }).setOrigin(0.5);
 
-      this.add.text(x, y + 40, `目标分: ${level.targetScore}  |  限时: ${level.timeLimit}秒`, {
+      this.add.text(x, y + 38, `目标分: ${level.targetScore}  |  限时: ${level.timeLimit}秒`, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '14px',
         color: '#555555'
       }).setOrigin(0.5);
 
-      this.add.text(x, y + 70, `难度: ${DIFFICULTY_NAMES[level.difficulty]}`, {
+      this.add.text(x, y + 64, `难度: ${DIFFICULTY_NAMES[level.difficulty]}`, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '14px',
         color: difficultyColor,
@@ -109,7 +109,7 @@ export class LevelSelectScene extends Phaser.Scene {
       }).setOrigin(0.5);
 
       if (isCompleted && highScore > 0) {
-        this.add.text(x, y + 95, `★ 最高分: ${highScore}分`, {
+        this.add.text(x, y + 85, `★ 最高分: ${highScore}分`, {
           fontFamily: 'Microsoft YaHei, sans-serif',
           fontSize: '14px',
           color: '#FF9800',

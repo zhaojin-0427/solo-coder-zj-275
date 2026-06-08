@@ -17,7 +17,7 @@ export class FlowerAlbumScene extends Phaser.Scene {
     this.createHeader();
     this.createFilters();
     this.flowerCardsContainer = this.add.container(20, 160);
-    this.detailPanel = this.add.container(0, 0);
+    this.detailPanel = this.add.container(0, 0).setDepth(100);
     this.updateFlowerCards();
     this.createBackButton();
     this.createColorHarmonyInfo();
