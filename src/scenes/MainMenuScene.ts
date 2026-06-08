@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { loadProgress } from '../utils/storage';
+import { FLOWERS } from '../data/flowers';
 
 export class MainMenuScene extends Phaser.Scene {
   constructor() {
@@ -15,7 +16,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   private createBackground(): void {
     const { width, height } = this.scale;
-    
+
     for (let i = 0; i < 20; i++) {
       const x = Phaser.Math.Between(0, width);
       const y = Phaser.Math.Between(0, height);
@@ -30,14 +31,14 @@ export class MainMenuScene extends Phaser.Scene {
   private createTitle(): void {
     const { width } = this.scale;
 
-    const title = this.add.text(width / 2, 150, '花束搭配挑战', {
+    const title = this.add.text(width / 2, 120, '花束搭配挑战', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '60px',
       color: '#D81B60',
       fontStyle: 'bold'
     }).setOrigin(0.5).setShadow(2, 2, 'rgba(0,0,0,0.2)', 5);
 
-    this.add.text(width / 2, 230, '— 花艺师的色彩艺术 —', {
+    this.add.text(width / 2, 200, '花艺师的色彩艺术', {
       fontFamily: 'Microsoft YaHei, sans-serif',
       fontSize: '24px',
       color: '#880E4F'
@@ -45,32 +46,43 @@ export class MainMenuScene extends Phaser.Scene {
 
     const progress = loadProgress();
     const totalScore = Object.values(progress.highScores).reduce((a, b) => a + b, 0);
+    const orderCount = progress.completedOrders.length;
 
-    this.add.text(width / 2, 280, `累计最高分: ${totalScore}分  |  已通关: ${progress.completedLevels.length}/6`, {
+    this.add.text(width / 2, 245, '累计最高分: ' + totalScore + '分  |  已完成订单: ' + orderCount + '笔', {
       fontFamily: 'Microsoft YaHei, sans-serif',
-      fontSize: '18px',
+      fontSize: '16px',
       color: '#AD1457'
+    }).setOrigin(0.5);
+
+    this.add.text(width / 2, 275, '💰 金币: ' + progress.coins + '  |  ⭐ 声望: ' + progress.customerReputation + '  |  🌸 花材: ' + progress.unlockedFlowers.length + '/' + FLOWERS.length, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '16px',
+      color: '#C2185B'
     }).setOrigin(0.5);
   }
 
   private createMenuButtons(): void {
     const { width } = this.scale;
 
-    this.createButton(width / 2, 380, '开始挑战', '#E91E63', () => {
+    this.createButton(width / 2, 350, '📋 接单大厅', '#E91E63', () => {
+      this.scene.start('OrderSelectScene');
+    });
+
+    this.createButton(width / 2, 430, '🎯 固定关卡', '#FF5722', () => {
       this.scene.start('LevelSelectScene');
     });
 
-    this.createButton(width / 2, 470, '花材图鉴', '#FF9800', () => {
+    this.createButton(width / 2, 510, '📖 花材图鉴', '#FF9800', () => {
       this.scene.start('FlowerAlbumScene');
     });
 
-    this.createButton(width / 2, 560, '退出游戏', '#9C27B0', () => {
+    this.createButton(width / 2, 590, '🚪 退出游戏', '#9C27B0', () => {
       this.game.destroy(true);
     });
   }
 
   private createButton(x: number, y: number, text: string, color: string, onClick: () => void): void {
-    const button = this.add.rectangle(x, y, 280, 60, Number('0x' + color.slice(1)), 0.9).setStrokeStyle(2, 0xFFFFFF, 0.8);
+    const button = this.add.rectangle(x, y, 320, 65, Number('0x' + color.slice(1)), 0.9).setStrokeStyle(2, 0xFFFFFF, 0.8);
 
     const label = this.add.text(x, y, text, {
       fontFamily: 'Microsoft YaHei, sans-serif',

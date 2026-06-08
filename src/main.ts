@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { MainMenuScene } from './scenes/MainMenuScene';
 import { LevelSelectScene } from './scenes/LevelSelectScene';
+import { OrderSelectScene } from './scenes/OrderSelectScene';
+import { OrderDetailScene } from './scenes/OrderDetailScene';
 import { GameScene } from './scenes/GameScene';
 import { ResultScene } from './scenes/ResultScene';
 import { FlowerAlbumScene } from './scenes/FlowerAlbumScene';
@@ -14,6 +16,8 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [
     MainMenuScene,
     LevelSelectScene,
+    OrderSelectScene,
+    OrderDetailScene,
     GameScene,
     ResultScene,
     FlowerAlbumScene
