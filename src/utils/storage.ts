@@ -1,32 +1,53 @@
-import { GameProgress, CompletedOrderRecord, Order, Bouquet, ScoreResult, Flower, CustomerProfile, CustomerOrderHistory, SkillId, ProfessionRank } from '../types';
-import { FLOWERS } from '../data/flowers';
-import { checkAchievements } from './orderGenerator';
 import {
-  calculateCustomerSatisfaction,
-  calculateProfessionExp,
-  calculateReputationChange,
-  updateReputationStatus,
-  getProfessionRank,
-  initializeCustomerProfile,
-  updateCustomerProfile,
-  addCustomerVisitRecord,
-  calculateScoreDetail
-} from './customerGrowth';
+  GameProgress,
+  CustomerProfile,
+  CustomerOrderHistory,
+  CompletedOrderRecord,
+  SkillId
+} from '../types';
+import { FLOWERS } from '../data/flowers';
+import { PROFESSION_LEVELS, PROFESSION_SKILLS } from '../data/orders';
 
 const STORAGE_KEY = 'flower_bouquet_game_progress';
 
-function getDefaultSkills(): Record<SkillId, number> {
+function createDefaultProgress(): GameProgress {
+  const defaultUnlocked = FLOWERS.filter(f => f.unlocked).map(f => f.id);
+  const skills: Record<SkillId, number> = {} as Record<SkillId, number>;
+  PROFESSION_SKILLS.forEach(s => {
+    skills[s.id] = 0;
+  });
   return {
-    color_expert: 0,
-    meaning_master: 0,
-    budget_whiz: 0,
-    season_sense: 0,
-    speed_arranger: 0,
-    forbidden_detector: 0,
-    palette_sense: 0,
-    bonus_hunter: 0,
-    customer_charm: 0,
-    reputation_builder: 0
+    highScores: {},
+    unlockedFlowers: defaultUnlocked,
+    completedLevels: [],
+    completedOrders: [],
+    coins: 0,
+    customerReputation: 0,
+    achievements: [],
+    firstPlayTime: Date.now(),
+    lastPlayTime: Date.now(),
+    totalPlayTime: 0,
+    totalEarnedCoins: 0,
+    customers: {},
+    customerHistories: {},
+    professionRank: 'apprentice',
+    professionExp: 0,
+    skills,
+    reputationStatus: {
+      currentReputation: 0,
+      penaltyActive: false,
+      penaltyAmount: 0,
+      penaltyReason: '',
+      penaltyExpiresAt: null,
+      consecutiveFailures: 0,
+      lastFailedAt: undefined,
+      recoveryRatePerOrder: 5
+    },
+    totalCompletedOrders: 0,
+    totalPassedOrders: 0,
+    totalFailedOrders: 0,
+    satisfiedCustomers: 0,
+    repurchaseOrders: 0
   };
 }
 
@@ -35,69 +56,18 @@ export function loadProgress(): GameProgress {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      return {
-        highScores: parsed.highScores || {},
-        unlockedFlowers: parsed.unlockedFlowers || [],
-        completedLevels: parsed.completedLevels || [],
-        completedOrders: parsed.completedOrders || [],
-        customerReputation: parsed.customerReputation || 0,
-        coins: parsed.coins || 0,
-        achievements: parsed.achievements || [],
-        customers: parsed.customers || {},
-        customerHistories: parsed.customerHistories || {},
-        professionRank: parsed.professionRank || 'apprentice',
-        professionExp: parsed.professionExp || 0,
-        skills: parsed.skills || getDefaultSkills(),
-        reputationStatus: parsed.reputationStatus || {
-          currentReputation: 0,
-          penaltyActive: false,
-          penaltyAmount: 0,
-          penaltyReason: '',
-          penaltyExpiresAt: null,
-          recoveryRatePerOrder: 5
-        },
-        totalEarnedCoins: parsed.totalEarnedCoins || 0,
-        totalEarnedReputation: parsed.totalEarnedReputation || 0,
-        perfectOrderCount: parsed.perfectOrderCount || 0,
-        failedOrderCount: parsed.failedOrderCount || 0,
-        repurchaseOrderCount: parsed.repurchaseOrderCount || 0
-      };
+      const defaults = createDefaultProgress();
+      return { ...defaults, ...parsed };
     }
   } catch (e) {
     console.error('Failed to load progress', e);
   }
-  const defaultUnlocked = FLOWERS.filter(f => f.unlocked).map(f => f.id);
-  return {
-    highScores: {},
-    unlockedFlowers: defaultUnlocked,
-    completedLevels: [],
-    completedOrders: [],
-    customerReputation: 0,
-    coins: 0,
-    achievements: [],
-    customers: {},
-    customerHistories: {},
-    professionRank: 'apprentice',
-    professionExp: 0,
-    skills: getDefaultSkills(),
-    reputationStatus: {
-      currentReputation: 0,
-      penaltyActive: false,
-      penaltyAmount: 0,
-      penaltyReason: '',
-      penaltyExpiresAt: null,
-      recoveryRatePerOrder: 5
-    },
-    totalEarnedCoins: 0,
-    totalEarnedReputation: 0,
-    perfectOrderCount: 0,
-    failedOrderCount: 0,
-    repurchaseOrderCount: 0
-  };
+  return createDefaultProgress();
 }
 
 export function saveProgress(progress: GameProgress): void {
   try {
+    progress.lastPlayTime = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
   } catch (e) {
     console.error('Failed to save progress', e);
@@ -135,135 +105,43 @@ export function completeLevel(levelId: number): GameProgress {
   return progress;
 }
 
-export function getOrCreateCustomer(customerId: string, customerIndex: number): CustomerProfile {
+export function saveCustomer(profile: CustomerProfile): GameProgress {
   const progress = loadProgress();
-  if (progress.customers[customerId]) {
-    return progress.customers[customerId];
-  }
-  return initializeCustomerProfile(customerIndex);
+  progress.customers[profile.id] = profile;
+  saveProgress(progress);
+  return progress;
 }
 
-export function completeOrder(
-  order: Order,
-  scoreResult: ScoreResult,
-  bouquet: Bouquet,
-  earnedCoins: number,
-  earnedReputation: number,
-  unlockedFlowerIds: string[],
-  achievedBonusIds: string[],
-  usedFlowerIds: string[]
-): { progress: GameProgress; newAchievements: string[]; satisfaction: any } {
+export function saveCustomerHistory(history: CustomerOrderHistory): GameProgress {
   const progress = loadProgress();
-
-  const customerIndex = parseInt(order.customerId.replace('customer_', ''), 36) % 12;
-  let customerProfile = progress.customers[order.customerId] || initializeCustomerProfile(customerIndex);
-
-  const satisfaction = calculateCustomerSatisfaction(
-    order,
-    bouquet,
-    scoreResult,
-    achievedBonusIds,
-    customerProfile,
-    progress.skills
-  );
-
-  const spent = usedFlowerIds.reduce((sum, id) => {
-    const flower = FLOWERS.find(f => f.id === id);
-    return sum + (flower?.price || 0);
-  }, 0);
-
-  customerProfile = updateCustomerProfile(
-    customerProfile,
-    order,
-    satisfaction,
-    scoreResult.passed,
-    spent
-  );
-  progress.customers[order.customerId] = customerProfile;
-
-  const history = progress.customerHistories[order.customerId] || null;
-  progress.customerHistories[order.customerId] = addCustomerVisitRecord(
-    history,
-    order.customerId,
-    order,
-    scoreResult,
-    satisfaction
-  );
-
-  const gainedExp = calculateProfessionExp(scoreResult, order, satisfaction);
-  progress.professionExp += gainedExp;
-
-  const reputationChange = calculateReputationChange(scoreResult, order, progress.skills);
-  progress.reputationStatus = updateReputationStatus(
-    progress.reputationStatus,
-    reputationChange,
-    scoreResult.passed
-  );
-  progress.customerReputation = progress.reputationStatus.currentReputation;
-
-  const newRank = getProfessionRank(progress.professionExp, progress.customerReputation);
-  if (newRank !== progress.professionRank) {
-    progress.professionRank = newRank;
-  }
-
-  const scoreDetail = calculateScoreDetail(bouquet, order, scoreResult, achievedBonusIds, progress.skills);
-
-  const record: CompletedOrderRecord = {
-    orderId: order.id,
-    orderTitle: order.title,
-    customerId: order.customerId,
-    customerName: order.customerName,
-    score: scoreResult.totalScore,
-    passed: scoreResult.passed,
-    completedAt: Date.now(),
-    earnedCoins,
-    earnedReputation: reputationChange,
-    unlockedFlowers: unlockedFlowerIds,
-    achievedBonuses: achievedBonusIds,
-    flowerIdsUsed: usedFlowerIds,
-    satisfaction: satisfaction.satisfaction,
-    repurchaseProbability: satisfaction.repurchaseProbability,
-    isRepurchase: !!order.isRepurchase,
-    gainedExp,
-    scoreDetail
-  };
-
-  progress.completedOrders.push(record);
-
-  if (scoreResult.passed) {
-    progress.coins += earnedCoins;
-    progress.totalEarnedCoins += earnedCoins;
-    if (reputationChange > 0) {
-      progress.totalEarnedReputation += reputationChange;
-    }
-    if (scoreResult.totalScore >= 90) {
-      progress.perfectOrderCount++;
-    }
-    if (order.isRepurchase) {
-      progress.repurchaseOrderCount++;
-    }
-
-    unlockedFlowerIds.forEach(id => {
-      if (!progress.unlockedFlowers.includes(id)) {
-        progress.unlockedFlowers.push(id);
-      }
-    });
-  } else {
-    progress.failedOrderCount++;
-  }
-
-  const currentAchievements = checkAchievements(progress);
-  const newAchievements = currentAchievements.filter(a => !progress.achievements.includes(a));
-  progress.achievements.push(...newAchievements);
-
+  progress.customerHistories[history.customerId] = history;
   saveProgress(progress);
+  return progress;
+}
 
-  return { progress, newAchievements, satisfaction: { ...satisfaction, gainedExp } };
+export function addCompletedOrder(record: CompletedOrderRecord): GameProgress {
+  const progress = loadProgress();
+  progress.completedOrders.push(record);
+  progress.totalCompletedOrders++;
+  if (record.passed) {
+    progress.totalPassedOrders++;
+  } else {
+    progress.totalFailedOrders++;
+  }
+  if (record.passed && record.satisfaction >= 80) {
+    progress.satisfiedCustomers++;
+  }
+  if (record.isRepurchase) {
+    progress.repurchaseOrders++;
+  }
+  saveProgress(progress);
+  return progress;
 }
 
 export function addCoins(amount: number): GameProgress {
   const progress = loadProgress();
   progress.coins += amount;
+  progress.totalEarnedCoins += Math.max(0, amount);
   saveProgress(progress);
   return progress;
 }
@@ -272,28 +150,60 @@ export function addReputation(amount: number): GameProgress {
   const progress = loadProgress();
   progress.customerReputation += amount;
   progress.reputationStatus.currentReputation = progress.customerReputation;
+  if (amount < 0) {
+    progress.reputationStatus.penaltyActive = true;
+    progress.reputationStatus.penaltyAmount = Math.abs(amount);
+    progress.reputationStatus.penaltyReason = '订单失败，信誉受损';
+    progress.reputationStatus.consecutiveFailures = (progress.reputationStatus.consecutiveFailures || 0) + 1;
+    progress.reputationStatus.lastFailedAt = Date.now();
+  } else {
+    progress.reputationStatus.consecutiveFailures = 0;
+    if (progress.reputationStatus.penaltyActive &&
+        progress.customerReputation >= progress.reputationStatus.currentReputation + progress.reputationStatus.recoveryRatePerOrder) {
+      progress.reputationStatus.penaltyActive = false;
+      progress.reputationStatus.penaltyAmount = 0;
+      progress.reputationStatus.penaltyReason = '';
+    }
+  }
   saveProgress(progress);
   return progress;
 }
 
-export function getCompletedOrderCount(): number {
+export function addProfessionExp(amount: number): GameProgress {
   const progress = loadProgress();
-  return progress.completedOrders.length;
+  progress.professionExp += amount;
+  const currentRankIndex = PROFESSION_LEVELS.findIndex(l => l.rank === progress.professionRank);
+  for (let i = currentRankIndex + 1; i < PROFESSION_LEVELS.length; i++) {
+    if (progress.professionExp >= PROFESSION_LEVELS[i].requiredExp) {
+      progress.professionRank = PROFESSION_LEVELS[i].rank;
+    } else {
+      break;
+    }
+  }
+  saveProgress(progress);
+  return progress;
+}
+
+export function upgradeSkill(skillId: SkillId): GameProgress {
+  const progress = loadProgress();
+  const currentLevel = progress.skills[skillId] || 0;
+  const skillConfig = PROFESSION_SKILLS.find(s => s.id === skillId);
+  if (skillConfig && currentLevel < skillConfig.maxLevel) {
+    const cost = (currentLevel + 1) * 100;
+    if (progress.coins >= cost) {
+      progress.coins -= cost;
+      progress.skills[skillId] = currentLevel + 1;
+      saveProgress(progress);
+    }
+  }
+  return progress;
 }
 
 export function getRecentOrders(limit: number = 10): CompletedOrderRecord[] {
   const progress = loadProgress();
-  return progress.completedOrders.slice(-limit).reverse();
-}
-
-export function getCustomerProfile(customerId: string): CustomerProfile | null {
-  const progress = loadProgress();
-  return progress.customers[customerId] || null;
-}
-
-export function getCustomerHistory(customerId: string): CustomerOrderHistory | null {
-  const progress = loadProgress();
-  return progress.customerHistories[customerId] || null;
+  return progress.completedOrders
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, limit);
 }
 
 export function getAllCustomers(): CustomerProfile[] {
@@ -301,32 +211,46 @@ export function getAllCustomers(): CustomerProfile[] {
   return Object.values(progress.customers);
 }
 
-export function upgradeSkill(skillId: SkillId, cost: number): GameProgress | null {
+export function getCustomerProfile(customerId: string): CustomerProfile | undefined {
   const progress = loadProgress();
-  if (progress.coins < cost) return null;
+  return progress.customers[customerId];
+}
 
-  const currentLevel = progress.skills[skillId] || 0;
-  const maxLevel = skillId === 'forbidden_detector' || skillId === 'bonus_hunter' ? 3 : 5;
-  if (currentLevel >= maxLevel) return null;
+export function getCustomerHistory(customerId: string): CustomerOrderHistory | undefined {
+  const progress = loadProgress();
+  return progress.customerHistories[customerId];
+}
 
-  progress.coins -= cost;
-  progress.skills[skillId] = currentLevel + 1;
+export function resetProgress(): GameProgress {
+  const progress = createDefaultProgress();
   saveProgress(progress);
   return progress;
 }
 
-export function recoverReputationManually(): GameProgress {
+export function addAchievement(achievementId: string): GameProgress {
   const progress = loadProgress();
-  if (!progress.reputationStatus.penaltyActive) return progress;
+  if (!progress.achievements.includes(achievementId)) {
+    progress.achievements.push(achievementId);
+    saveProgress(progress);
+  }
+  return progress;
+}
 
-  progress.reputationStatus.penaltyActive = false;
-  progress.reputationStatus.penaltyAmount = 0;
-  progress.reputationStatus.penaltyReason = '';
-  progress.reputationStatus.penaltyExpiresAt = null;
+export function addPlayTime(seconds: number): GameProgress {
+  const progress = loadProgress();
+  progress.totalPlayTime += seconds;
   saveProgress(progress);
   return progress;
 }
 
-export function resetProgress(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export function getFlowerDiscount(): number {
+  const progress = loadProgress();
+  const rankConfig = PROFESSION_LEVELS.find(l => l.rank === progress.professionRank);
+  return rankConfig ? rankConfig.flowerDiscount : 0;
+}
+
+export function getRewardMultiplier(): number {
+  const progress = loadProgress();
+  const rankConfig = PROFESSION_LEVELS.find(l => l.rank === progress.professionRank);
+  return rankConfig ? rankConfig.orderRewardMultiplier : 1;
 }

@@ -113,7 +113,7 @@ function buildBonusTargets(selected: typeof BONUS_TARGET_POOL): BonusTarget[] {
           case 'bonus_perfect_meaning':
             return result.meaningScore >= 100;
           case 'bonus_fast_delivery':
-            return result.timeBonusScore >= 5;
+            return (result.timeBonusScore || 0) >= 5;
           case 'bonus_palette_match':
             return allFlowers.length > 0 && allFlowers.every(f => {
               if (!order.preferredColorHues) return true;
