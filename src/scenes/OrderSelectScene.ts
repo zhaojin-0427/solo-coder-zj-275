@@ -1,10 +1,18 @@
 import Phaser from 'phaser';
-import { Order, OrderDifficulty, OrderFilter, Scene as GameSceneType, Season, CustomerProfile } from '../types';
+import { Order, OrderDifficulty, OrderFilter, Scene as GameSceneType, Season, CustomerProfile, StockRiskLevel, DailyReport, OrderPreparationResult } from '../types';
 import { generateOrderPool } from '../utils/orderGenerator';
-import { loadProgress, getRecentOrders, getAllCustomers, getCustomerHistory } from '../utils/storage';
+import { loadProgress, getRecentOrders, getAllCustomers, getCustomerHistory, saveProgress } from '../utils/storage';
+import { prepareOrder, advanceBusinessDay } from '../utils/business';
 import { ORDER_DIFFICULTY_NAMES, DIFFICULTY_COLORS, PALETTE_NAMES, CUSTOMER_TAG_NAMES, PROFESSION_RANK_NAMES } from '../data/orders';
 import { SCENE_NAMES, SEASON_NAMES } from '../data/levels';
 import { getSatisfactionEmoji, getSatisfactionLabel, getRepurchaseLabel, getFlowerDiscount } from '../utils/customerGrowth';
+
+const STOCK_RISK_CONFIG: Record<StockRiskLevel, { color: string; bgColor: number; label: string; icon: string }> = {
+  low: { color: '#2E7D32', bgColor: 0x66BB6A, label: '库存充足', icon: '✅' },
+  medium: { color: '#F57C00', bgColor: 0xFFB74D, label: '库存偏低', icon: '⚠️' },
+  high: { color: '#E65100', bgColor: 0xFF7043, label: '库存不足', icon: '🔶' },
+  critical: { color: '#B71C1C', bgColor: 0xEF5350, label: '库存告急', icon: '🚨' }
+};
 
 export class OrderSelectScene extends Phaser.Scene {
   private orders: Order[] = [];
@@ -85,6 +93,37 @@ export class OrderSelectScene extends Phaser.Scene {
       }).setOrigin(1, 0);
     }
 
+    this.add.text(25, 82, '📅 第 ' + progress.currentDay + ' 天 | ' + SEASON_NAMES[progress.businessDays[progress.businessDays.length - 1]?.season || 'spring'], {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '12px',
+      color: '#FFF9C4',
+      fontStyle: 'bold'
+    });
+
+    const advanceBtn = this.add.rectangle(width - 300, 50, 115, 80, 0x673AB7, 0.95).setStrokeStyle(2, 0xFFFFFF, 0.8);
+    this.add.text(width - 300, 38, '🌅', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '20px',
+      color: '#FFFFFF'
+    }).setOrigin(0.5);
+    this.add.text(width - 300, 62, '进入新一天', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '12px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    this.add.text(width - 300, 80, '结算 & 报表', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '9px',
+      color: '#D1C4E9'
+    }).setOrigin(0.5);
+    advanceBtn.setInteractive({ useHandCursor: true });
+    advanceBtn.on('pointerover', () => advanceBtn.setScale(1.05));
+    advanceBtn.on('pointerout', () => advanceBtn.setScale(1));
+    advanceBtn.on('pointerdown', () => {
+      this.handleAdvanceDay();
+    });
+
     const refreshBtn = this.add.rectangle(width - 55, 50, 95, 80, 0xFF9800, 0.95).setStrokeStyle(2, 0xFFFFFF, 0.8);
     this.add.text(width - 55, 42, '🔄', {
       fontFamily: 'Microsoft YaHei, sans-serif',
@@ -105,6 +144,183 @@ export class OrderSelectScene extends Phaser.Scene {
       this.orders = generateOrderPool(8, undefined, prog);
       this.scrollY = 0;
       this.updateOrdersList();
+    });
+  }
+
+  private handleAdvanceDay(): void {
+    const progress = loadProgress();
+    const result = advanceBusinessDay(progress);
+    saveProgress(result.progress);
+    this.showDailyReport(result.report);
+  }
+
+  private showDailyReport(report: DailyReport): void {
+    const { width, height } = this.scale;
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.7);
+    overlay.setInteractive();
+
+    const panelW = 560;
+    const panelH = 520;
+    const panel = this.add.rectangle(width / 2, height / 2, panelW, panelH, 0xFFFFFF, 1).setStrokeStyle(4, 0x673AB7);
+
+    this.add.text(width / 2, height / 2 - 240, '📊 第 ' + report.dayNumber + ' 天 营业报表', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '22px',
+      color: '#4A148C',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    const summary = report.summary;
+    const summaryY = height / 2 - 200;
+    this.add.rectangle(width / 2, summaryY, 500, 70, 0xF3E5F5, 0.8).setStrokeStyle(2, 0xCE93D8);
+
+    this.add.text(width / 2 - 230, summaryY - 18, '💰 收入: ¥' + summary.revenue.toFixed(2), {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '13px',
+      color: '#2E7D32',
+      fontStyle: 'bold'
+    }).setOrigin(0, 0.5);
+
+    this.add.text(width / 2 - 70, summaryY - 18, '💸 成本: ¥' + summary.costs.toFixed(2), {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '13px',
+      color: '#C62828',
+      fontStyle: 'bold'
+    }).setOrigin(0, 0.5);
+
+    const profitColor = summary.profit >= 0 ? '#2E7D32' : '#C62828';
+    this.add.text(width / 2 + 100, summaryY - 18, (summary.profit >= 0 ? '📈' : '📉') + ' 利润: ¥' + summary.profit.toFixed(2), {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '13px',
+      color: profitColor,
+      fontStyle: 'bold'
+    }).setOrigin(0, 0.5);
+
+    this.add.text(width / 2 - 230, summaryY + 12, '✅ 完成: ' + summary.ordersCompleted + '单  😊 满意度: ' + summary.customerSatisfaction.toFixed(0), {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '12px',
+      color: '#6A1B9A'
+    }).setOrigin(0, 0.5);
+
+    this.add.text(width / 2 + 100, summaryY + 12, '🏆 声望: ' + summary.studioReputationChange, {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '12px',
+      color: '#F57C00',
+      fontStyle: 'bold'
+    }).setOrigin(0, 0.5);
+
+    let contentY = height / 2 - 140;
+
+    if (report.highlights.length > 0) {
+      this.add.text(width / 2 - 250, contentY, '🌟 亮点', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '13px',
+        color: '#2E7D32',
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5);
+      contentY += 20;
+      report.highlights.slice(0, 3).forEach((h) => {
+        this.add.text(width / 2 - 240, contentY, '  ' + h, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '11px',
+          color: '#388E3C',
+          wordWrap: { width: 480 }
+        }).setOrigin(0, 0.5);
+        contentY += 18;
+      });
+    }
+
+    if (report.warnings.length > 0) {
+      contentY += 5;
+      this.add.text(width / 2 - 250, contentY, '⚠️ 警告', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '13px',
+        color: '#C62828',
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5);
+      contentY += 20;
+      report.warnings.slice(0, 3).forEach((w) => {
+        this.add.text(width / 2 - 240, contentY, '  ' + w, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '11px',
+          color: '#D32F2F',
+          wordWrap: { width: 480 }
+        }).setOrigin(0, 0.5);
+        contentY += 18;
+      });
+    }
+
+    if (report.lowStockAlerts.length > 0) {
+      contentY += 5;
+      this.add.text(width / 2 - 250, contentY, '🥀 库存告急花材', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '13px',
+        color: '#E65100',
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5);
+      contentY += 20;
+      const alertText = report.lowStockAlerts.map(a => a.flowerId + '(剩' + a.currentStock + ')').join('、');
+      this.add.text(width / 2 - 240, contentY, '  ' + alertText, {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '11px',
+        color: '#BF360C',
+        wordWrap: { width: 480 }
+      }).setOrigin(0, 0.5);
+      contentY += 18;
+    }
+
+    if (report.marketInsights.length > 0) {
+      contentY += 5;
+      this.add.text(width / 2 - 250, contentY, '📈 市场动态', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '13px',
+        color: '#1565C0',
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5);
+      contentY += 20;
+      report.marketInsights.slice(0, 2).forEach((m) => {
+        this.add.text(width / 2 - 240, contentY, '  ' + m, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '11px',
+          color: '#1976D2',
+          wordWrap: { width: 480 }
+        }).setOrigin(0, 0.5);
+        contentY += 18;
+      });
+    }
+
+    if (report.suggestions.length > 0) {
+      contentY += 5;
+      this.add.text(width / 2 - 250, contentY, '💡 建议', {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '13px',
+        color: '#6A1B9A',
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5);
+      contentY += 20;
+      report.suggestions.slice(0, 2).forEach((s) => {
+        this.add.text(width / 2 - 240, contentY, '  ' + s, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '11px',
+          color: '#7B1FA2',
+          wordWrap: { width: 480 }
+        }).setOrigin(0, 0.5);
+        contentY += 18;
+      });
+    }
+
+    const closeBtn = this.add.rectangle(width / 2, height / 2 + 220, 140, 40, 0x673AB7, 0.95).setStrokeStyle(2, 0xFFFFFF);
+    this.add.text(width / 2, height / 2 + 220, '开始新的一天 ✨', {
+      fontFamily: 'Microsoft YaHei, sans-serif',
+      fontSize: '14px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    closeBtn.setInteractive({ useHandCursor: true });
+    closeBtn.on('pointerover', () => closeBtn.setScale(1.05));
+    closeBtn.on('pointerout', () => closeBtn.setScale(1));
+    closeBtn.on('pointerdown', () => {
+      this.scene.restart();
     });
   }
 
@@ -486,6 +702,7 @@ export class OrderSelectScene extends Phaser.Scene {
 
   private updateOrdersList(): void {
     this.ordersContainer.removeAll(true);
+    const progress = loadProgress();
 
     let filtered = this.orders;
     if (this.activeFilter.difficulty && this.activeFilter.difficulty.length > 0) {
@@ -496,7 +713,7 @@ export class OrderSelectScene extends Phaser.Scene {
     }
 
     const cardW = 610;
-    const cardH = 125;
+    const cardH = 180;
     const gapY = 12;
     const totalHeight = filtered.length * (cardH + gapY);
     this.maxScrollY = Math.min(0, 500 - totalHeight);
@@ -514,6 +731,9 @@ export class OrderSelectScene extends Phaser.Scene {
 
     filtered.forEach((order, index) => {
       const y = this.scrollY + index * (cardH + gapY) + cardH / 2;
+      const prepResult: OrderPreparationResult = prepareOrder(order, progress);
+      const stockRisk = prepResult.stockRisk;
+      const riskConfig = stockRisk ? STOCK_RISK_CONFIG[stockRisk.riskLevel] : STOCK_RISK_CONFIG.low;
 
       const isRepurchase = !!order.isRepurchase;
       const bgColor = isRepurchase ? 0xF3E5F5 : 0xFFFFFF;
@@ -522,9 +742,9 @@ export class OrderSelectScene extends Phaser.Scene {
       this.ordersContainer.add(card);
 
       if (isRepurchase) {
-        const repurchaseTag = this.add.rectangle(540, y - 50, 72, 20, 0x9C27B0, 0.95).setStrokeStyle(1, 0xFFFFFF);
+        const repurchaseTag = this.add.rectangle(540, y - 78, 72, 20, 0x9C27B0, 0.95).setStrokeStyle(1, 0xFFFFFF);
         this.ordersContainer.add(repurchaseTag);
-        this.ordersContainer.add(this.add.text(540, y - 50, '🔄 回头客', {
+        this.ordersContainer.add(this.add.text(540, y - 78, '🔄 回头客', {
           fontFamily: 'Microsoft YaHei, sans-serif',
           fontSize: '10px',
           color: '#FFFFFF',
@@ -533,33 +753,94 @@ export class OrderSelectScene extends Phaser.Scene {
       }
 
       const diffColor = Number('0x' + DIFFICULTY_COLORS[order.difficulty].slice(1));
-      const diffTag = this.add.rectangle(isRepurchase ? 620 : 65, y - 50, 65, 22, diffColor, 0.9).setStrokeStyle(1, 0xFFFFFF);
+      const diffTag = this.add.rectangle(isRepurchase ? 620 : 65, y - 78, 65, 22, diffColor, 0.9).setStrokeStyle(1, 0xFFFFFF);
       this.ordersContainer.add(diffTag);
-      this.ordersContainer.add(this.add.text(isRepurchase ? 620 : 65, y - 50, ORDER_DIFFICULTY_NAMES[order.difficulty], {
+      this.ordersContainer.add(this.add.text(isRepurchase ? 620 : 65, y - 78, ORDER_DIFFICULTY_NAMES[order.difficulty], {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '11px',
         color: '#FFFFFF',
         fontStyle: 'bold'
       }).setOrigin(0.5));
 
-      this.ordersContainer.add(this.add.text(15, y - 50, order.customerAvatar, {
+      this.ordersContainer.add(this.add.text(15, y - 78, order.customerAvatar, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '20px'
       }).setOrigin(0, 0.5));
 
-      this.ordersContainer.add(this.add.text(isRepurchase ? 15 : 110, y - 50, order.customerName + ' · ' + order.title, {
+      this.ordersContainer.add(this.add.text(isRepurchase ? 15 : 110, y - 78, order.customerName + ' · ' + order.title, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '15px',
         color: '#0D47A1',
         fontStyle: 'bold'
       }).setOrigin(0, 0.5));
 
-      this.ordersContainer.add(this.add.text(15, y - 8, order.description, {
+      this.ordersContainer.add(this.add.text(15, y - 45, order.description, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '11px',
         color: '#546E7A',
         wordWrap: { width: 370 }
       }).setOrigin(0, 0.5));
+
+      if (stockRisk) {
+        const riskTagX = 15;
+        const riskTagY = y - 15;
+        const riskTag = this.add.rectangle(riskTagX + 55, riskTagY, 115, 22, riskConfig.bgColor, 0.92).setStrokeStyle(2, 0xFFFFFF);
+        this.ordersContainer.add(riskTag);
+        const riskLabel = this.add.text(riskTagX + 55, riskTagY, riskConfig.icon + ' ' + riskConfig.label + ' ' + stockRisk.riskScore, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '10px',
+          color: '#FFFFFF',
+          fontStyle: 'bold'
+        }).setOrigin(0.5);
+        this.ordersContainer.add(riskLabel);
+
+        if (stockRisk.riskLevel === 'high' || stockRisk.riskLevel === 'critical') {
+          this.tweens.add({
+            targets: [riskTag, riskLabel],
+            alpha: { from: 1, to: 0.4 },
+            duration: 500,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+          });
+        }
+
+        if (stockRisk.missingFlowerIds.length > 0) {
+          const missIcon = this.add.text(140, riskTagY, '🚫缺' + stockRisk.missingFlowerIds.length, {
+            fontFamily: 'Microsoft YaHei, sans-serif',
+            fontSize: '10px',
+            color: '#B71C1C',
+            fontStyle: 'bold'
+          }).setOrigin(0, 0.5);
+          this.ordersContainer.add(missIcon);
+          if (stockRisk.riskLevel === 'critical') {
+            this.tweens.add({
+              targets: missIcon,
+              scale: { from: 1, to: 1.2 },
+              duration: 400,
+              yoyo: true,
+              repeat: -1,
+              ease: 'Sine.easeInOut'
+            });
+          }
+        }
+        if (stockRisk.lowStockFlowerIds.length > 0) {
+          this.ordersContainer.add(this.add.text(215, riskTagY, '📉低' + stockRisk.lowStockFlowerIds.length, {
+            fontFamily: 'Microsoft YaHei, sans-serif',
+            fontSize: '10px',
+            color: '#E65100',
+            fontStyle: 'bold'
+          }).setOrigin(0, 0.5));
+        }
+        if (stockRisk.deliveryTimeRisk) {
+          this.ordersContainer.add(this.add.text(280, riskTagY, '⏱延迟风险', {
+            fontFamily: 'Microsoft YaHei, sans-serif',
+            fontSize: '10px',
+            color: '#F57C00',
+            fontStyle: 'bold'
+          }).setOrigin(0, 0.5));
+        }
+      }
 
       const tags = [
         SCENE_NAMES[order.scene],
@@ -569,29 +850,29 @@ export class OrderSelectScene extends Phaser.Scene {
       ];
       tags.forEach((tag, i) => {
         const tx = 15 + i * 75;
-        const tagBg = this.add.rectangle(tx + 30, y + 25, 68, 20, 0xE3F2FD, 0.8).setStrokeStyle(1, 0x90CAF9);
+        const tagBg = this.add.rectangle(tx + 30, y + 12, 68, 20, 0xE3F2FD, 0.8).setStrokeStyle(1, 0x90CAF9);
         this.ordersContainer.add(tagBg);
-        this.ordersContainer.add(this.add.text(tx + 30, y + 25, tag, {
+        this.ordersContainer.add(this.add.text(tx + 30, y + 12, tag, {
           fontFamily: 'Microsoft YaHei, sans-serif',
           fontSize: '9px',
           color: '#1565C0'
         }).setOrigin(0.5));
       });
 
-      this.ordersContainer.add(this.add.text(390, y - 10, '🌼 花语: ' + order.requiredMeanings.join('、'), {
+      this.ordersContainer.add(this.add.text(390, y - 35, '🌼 花语: ' + order.requiredMeanings.join('、'), {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '10px',
         color: '#7B1FA2'
       }).setOrigin(0, 0.5));
 
-      this.ordersContainer.add(this.add.text(390, y + 8, '🎯 ' + order.targetScore + '分 | ⏱' + order.timeLimit + 's | 💰+' + order.coinReward, {
+      this.ordersContainer.add(this.add.text(390, y - 15, '🎯 ' + order.targetScore + '分 | ⏱' + order.timeLimit + 's | 💰+' + order.coinReward, {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '10px',
         color: '#F57C00'
       }).setOrigin(0, 0.5));
 
       if (order.forbiddenFlowerIds.length > 0) {
-        this.ordersContainer.add(this.add.text(390, y + 28, '🚫 禁用: ' + order.forbiddenFlowerIds.length + '种', {
+        this.ordersContainer.add(this.add.text(390, y + 5, '🚫 禁用: ' + order.forbiddenFlowerIds.length + '种', {
           fontFamily: 'Microsoft YaHei, sans-serif',
           fontSize: '9px',
           color: '#D32F2F'
@@ -599,7 +880,7 @@ export class OrderSelectScene extends Phaser.Scene {
       }
 
       if (order.bonusTargets.length > 0) {
-        this.ordersContainer.add(this.add.text(495, y + 28, '🏆 +' + order.bonusTargets.length, {
+        this.ordersContainer.add(this.add.text(495, y + 5, '🏆 +' + order.bonusTargets.length, {
           fontFamily: 'Microsoft YaHei, sans-serif',
           fontSize: '9px',
           color: '#388E3C',
@@ -607,15 +888,40 @@ export class OrderSelectScene extends Phaser.Scene {
         }).setOrigin(0, 0.5));
       }
 
-      const acceptBtn = this.add.rectangle(565, y - 10, 60, 40, 0x4CAF50, 0.95).setStrokeStyle(2, 0xFFFFFF, 0.8);
+      this.ordersContainer.add(this.add.rectangle(305, y + 42, 580, 28, prepResult.estimatedProfit >= 0 ? 0xE8F5E9 : 0xFFEBEE, 0.9).setStrokeStyle(1, prepResult.estimatedProfit >= 0 ? 0x66BB6A : 0xEF5350));
+      this.ordersContainer.add(this.add.text(25, y + 42, '💸预估成本: ¥' + prepResult.estimatedTotalCost.toFixed(2), {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '10px',
+        color: '#C62828',
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5));
+      const profitColor = prepResult.estimatedProfit >= 0 ? '#2E7D32' : '#C62828';
+      this.ordersContainer.add(this.add.text(210, y + 42, (prepResult.estimatedProfit >= 0 ? '📈预估利润: ¥' : '📉预估亏损: ¥') + Math.abs(prepResult.estimatedProfit).toFixed(2), {
+        fontFamily: 'Microsoft YaHei, sans-serif',
+        fontSize: '10px',
+        color: profitColor,
+        fontStyle: 'bold'
+      }).setOrigin(0, 0.5));
+
+      if (prepResult.budgetWarnings.length > 0) {
+        const warnText = prepResult.budgetWarnings.slice(0, 2).join(' | ');
+        this.ordersContainer.add(this.add.text(400, y + 42, warnText, {
+          fontFamily: 'Microsoft YaHei, sans-serif',
+          fontSize: '9px',
+          color: '#E65100',
+          fontStyle: 'bold'
+        }).setOrigin(0, 0.5));
+      }
+
+      const acceptBtn = this.add.rectangle(565, y + 12, 60, 50, 0x4CAF50, 0.95).setStrokeStyle(2, 0xFFFFFF, 0.8);
       this.ordersContainer.add(acceptBtn);
-      this.ordersContainer.add(this.add.text(565, y - 18, '接单', {
+      this.ordersContainer.add(this.add.text(565, y, '📋 接单', {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '14px',
         color: '#FFFFFF',
         fontStyle: 'bold'
       }).setOrigin(0.5));
-      this.ordersContainer.add(this.add.text(565, y - 3, '详情', {
+      this.ordersContainer.add(this.add.text(565, y + 25, '详情', {
         fontFamily: 'Microsoft YaHei, sans-serif',
         fontSize: '9px',
         color: '#C8E6C9'

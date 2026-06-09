@@ -4,6 +4,9 @@ import { LevelSelectScene } from './scenes/LevelSelectScene';
 import { GameScene } from './scenes/GameScene';
 import { ResultScene } from './scenes/ResultScene';
 import { FlowerAlbumScene } from './scenes/FlowerAlbumScene';
+import { OrderSelectScene } from './scenes/OrderSelectScene';
+import { OrderDetailScene } from './scenes/OrderDetailScene';
+import { OrderResultScene } from './scenes/OrderResultScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -16,7 +19,10 @@ const config: Phaser.Types.Core.GameConfig = {
     LevelSelectScene,
     GameScene,
     ResultScene,
-    FlowerAlbumScene
+    FlowerAlbumScene,
+    OrderSelectScene,
+    OrderDetailScene,
+    OrderResultScene
   ],
   scale: {
     mode: Phaser.Scale.FIT,

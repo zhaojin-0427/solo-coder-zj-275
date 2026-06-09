@@ -1,8 +1,9 @@
-import { Order, OrderDifficulty, Scene, Season, ColorPalette, BonusTarget, Bouquet, ScoreResult, CustomerProfile, GameProgress } from '../types';
+import { Order, OrderDifficulty, Scene, Season, ColorPalette, BonusTarget, Bouquet, ScoreResult, CustomerProfile, GameProgress, MarketCondition } from '../types';
 import { FLOWERS } from '../data/flowers';
 import { CUSTOMERS, PALETTE_HUES, SCENE_ORDER_TEMPLATES, SEASONAL_HINTS, HARMONY_HINTS_BY_PALETTE, BONUS_TARGET_POOL, CUSTOMER_IDS } from '../data/orders';
 import { SCENE_NAMES, SEASON_NAMES } from '../data/levels';
 import { getOrderRewardMultiplier, initializeCustomerProfile } from './customerGrowth';
+import { generateMarketCondition, getStudioRankConfig } from './business';
 
 function seededRandom(seed: number): () => number {
   let s = seed;
@@ -345,25 +346,95 @@ export function generateRepurchaseOrder(
 export function generateOrderPool(count: number = 8, baseSeed?: number, progress?: GameProgress): Order[] {
   const seed = baseSeed || Date.now();
   const orders: Order[] = [];
-  const difficulties: OrderDifficulty[] = ['easy', 'easy', 'medium', 'medium', 'hard', 'hard', 'expert'];
+  const rand = seededRandom(seed);
+
+  let actualCount = count;
+  let market: MarketCondition | null = null;
+  let difficultyPool: OrderDifficulty[] = ['easy', 'easy', 'medium', 'medium', 'hard', 'hard', 'expert'];
+  let budgetMultiplier = 1.0;
+  let repurchaseBonus = 0;
 
   if (progress) {
+    const studioConfig = getStudioRankConfig(progress.studio.rank);
+    actualCount = Math.max(4, Math.min(count, studioConfig.dailyOrderPoolSize));
+    actualCount = Math.round(actualCount * studioConfig.customerReachMultiplier);
+
+    if (progress.studio.studioReputation >= 100) {
+      difficultyPool = ['easy', 'medium', 'medium', 'hard', 'hard', 'expert', 'expert'];
+      budgetMultiplier = 1.1;
+    }
+    if (progress.studio.studioReputation >= 300) {
+      difficultyPool = ['medium', 'medium', 'hard', 'hard', 'hard', 'expert', 'expert'];
+      budgetMultiplier = 1.2;
+    }
+
+    if (progress.businessDays && progress.businessDays.length > 0) {
+      market = progress.businessDays[progress.businessDays.length - 1].marketCondition;
+    } else {
+      market = generateMarketCondition(progress.currentDay || 1, seed);
+    }
+
+    if (market && market.overallMultiplier > 1.1) {
+      budgetMultiplier *= market.overallMultiplier * 0.8;
+    } else if (market && market.overallMultiplier < 0.9) {
+      budgetMultiplier *= 1.05;
+    }
+
+    if (market && market.eventName) {
+      actualCount = Math.min(actualCount + 2, actualCount * 1.3);
+    }
+
     const customersWithHighRepurchase = Object.values(progress.customers).filter(
       c => c.repurchaseProbability >= 50 && c.totalOrders > 0
     );
-    const repurchaseCount = Math.min(2, customersWithHighRepurchase.length, Math.floor(count * 0.25));
+    repurchaseBonus = progress.studio.studioReputation >= 50 ? 1 : 0;
+    const repurchaseCount = Math.min(
+      2 + repurchaseBonus,
+      customersWithHighRepurchase.length,
+      Math.floor(actualCount * 0.3)
+    );
     for (let i = 0; i < repurchaseCount; i++) {
-      const customer = customersWithHighRepurchase[Math.floor(Math.random() * customersWithHighRepurchase.length)];
-      const orderSeed = seed + i * 2000 + Math.floor(Math.random() * 999);
+      const customer = customersWithHighRepurchase[Math.floor(rand() * customersWithHighRepurchase.length)];
+      const orderSeed = seed + i * 2000 + Math.floor(rand() * 999);
       orders.push(generateRepurchaseOrder(customer, orderSeed, progress));
     }
+  } else {
+    market = generateMarketCondition(1, seed);
   }
 
-  const remainingCount = count - orders.length;
+  const remainingCount = Math.max(0, actualCount - orders.length);
   for (let i = 0; i < remainingCount; i++) {
-    const orderSeed = seed + (i + 10) * 1000 + Math.floor(Math.random() * 999);
-    const diff = difficulties[i % difficulties.length];
-    orders.push(generateOrder(orderSeed, diff, undefined, progress));
+    const orderSeed = seed + (i + 10) * 1000 + Math.floor(rand() * 999);
+    const diff = difficultyPool[i % difficultyPool.length];
+    const order = generateOrder(orderSeed, diff, undefined, progress);
+
+    if (budgetMultiplier !== 1.0) {
+      order.budget = Math.round(order.budget * budgetMultiplier);
+      order.coinReward = Math.round(order.coinReward * budgetMultiplier);
+    }
+
+    if (market) {
+      order.season = market.season;
+      const shortageModifiers = order.forbiddenFlowerIds.filter(
+        id => market.shortageFlowerIds.includes(id)
+      ).length;
+      if (shortageModifiers > 0) {
+        order.budget = Math.round(order.budget * (1 + shortageModifiers * 0.05));
+      }
+
+      const surplusPreferred = market.surplusFlowerIds.some(
+        id => order.preferredColorHues && order.preferredColorHues.length > 0
+      );
+      if (surplusPreferred) {
+        order.targetScore = Math.max(50, order.targetScore - 3);
+      }
+
+      if (market.eventName) {
+        order.harmonyHint = `📢 市场动态：${market.eventName}。${order.harmonyHint || ''}`;
+      }
+    }
+
+    orders.push(order);
   }
 
   orders.sort(() => Math.random() - 0.5);
